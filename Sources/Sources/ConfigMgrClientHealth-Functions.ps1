@@ -2036,6 +2036,7 @@ Function Resolve-Client {
         Write-Log -Message "Trigger ConfigMgr Client installation"
         Write-Log -Message "Client install string: $SetupPath $ClientInstallProperties"
         $Return = Invoke-Executable -FilePath "$SetupPath" -ArgumentList "$ClientInstallProperties" -IgnoreExitCode @(0,3010,7)
+        $ErrNumber = $Return.ExitCode
         If ($Return.ExitCode -eq 7) {
             $log.PendingReboot = 'Pending Reboot'
             $ErrNumber = 3010
