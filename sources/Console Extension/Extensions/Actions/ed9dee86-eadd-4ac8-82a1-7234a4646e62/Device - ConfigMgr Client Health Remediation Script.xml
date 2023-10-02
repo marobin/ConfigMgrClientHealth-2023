@@ -1,0 +1,35 @@
+<ActionDescription Class="Group" DisplayName="ConfigMgr Client Health Remediation Script (CMCHRS)" MnemonicDisplayName="ConfigMgr Client Health Remediation Script" Description="ConfigMgr Client Health Remediation Script right click tool main menu">
+  <ImagesDescription>
+    <ResourceAssembly>
+      <Assembly>D:\CMClientHealth\ConsoleExtension\ConfigMgr Client Health.dll</Assembly>
+      <Type>ConfigMgr_Client_Health.Properties.Resources.resources</Type>
+    </ResourceAssembly>
+    <ImageResourceName>ClientHealth</ImageResourceName>
+  </ImagesDescription>
+  <ShowOn>
+	  <string>DefaultHomeTab</string>
+    <string>ContextMenu</string>
+  </ShowOn>
+  <ActionGroups>
+    <ActionDescription Class="Executable" DisplayName="Start remediation">
+      <ShowOn>
+        <string>DefaultHomeTab</string>
+        <string>ContextMenu</string>
+      </ShowOn>
+      <Executable>
+        <FilePath>Powershell.exe</FilePath>
+        <Parameters>-sta -executionpolicy bypass -file "D:\CMClientHealth\ConsoleExtension\Scripts\ConfigMgrClientHealthExtension.ps1" -Name "##SUB:Name##" -ScheduledTask "ConfigMgr Client Health Remediation Script" -Start -Type "Device"</Parameters>
+      </Executable>
+    </ActionDescription>
+	  <ActionDescription Class="Executable" DisplayName="Uninstall CMCHRS">
+      <ShowOn>
+        <string>DefaultHomeTab</string>
+        <string>ContextMenu</string>
+      </ShowOn>
+      <Executable>
+        <FilePath>Powershell.exe</FilePath>
+        <Parameters>-sta -executionpolicy bypass -file "D:\CMClientHealth\ConsoleExtension\Scripts\ConfigMgrClientHealthExtension.ps1" -Name "##SUB:Name##" -ScheduledTask "ConfigMgr Client Health Remediation Script" -Uninstall -Type "Device"</Parameters>
+      </Executable>
+    </ActionDescription>
+  </ActionGroups>
+</ActionDescription>
