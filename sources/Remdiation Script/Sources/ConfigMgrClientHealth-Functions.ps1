@@ -2334,13 +2334,30 @@ Function Resolve-Client {
         Write-Log -Message "Trigger ConfigMgr Client installation"
         Write-Log -Message "Client install string: $SetupPath $ClientInstallProperties"
         $Return = Invoke-Executable -FilePath "$SetupPath" -ArgumentList "$ClientInstallProperties" -IgnoreExitCode @(0,3010,7)
-        $ErrNumber = $Return.ExitCode
-        If ($Return.ExitCode -eq 7) {
+        
+        Start-Sleep -Seconds 5
+        # Test if a child process is still running
+        $ProcessID = Get-WMIClassInstance -Class Win32_Process -Filter 'CommandLine LIKE "%ccmsetup%"' -Property ProcessId | Select-Object -ExpandProperty ProcessId
+        $ErrNumber = $ExitCode = $Return.ExitCode
+        If ($null -ne $ProcessID) {
+            Write-Log -Message "Main process has exited with exit code $($Return.ExitCode), waiting for child process $ProcessId to end..."
+            $Process = Get-Process -Id $ProcessID
+            $Process.WaitForExit()
+            $CCMLogPath = "$env:SystemRoot\ccmsetup\Logs\ccmsetup.log"
+            If (Test-Path -Path $CCMLogPath) {
+                $ExitCode += (Select-String -Path $CCMLogPath -Pattern 'CcmSetup is exiting with return code (?<ExitCode>[-\d]+)').Matches.Groups.Where({$_.Name -eq 'ExitCode'}).Value | Select-Object -Last 1
+            }
+        }
+        Else {
+            $ErrNumber = $ExitCode = $Return.ExitCode
+        }
+
+        If (($ExitCode -in (7,14))) {
             $log.PendingReboot = 'Pending Reboot'
             $ErrNumber = 3010
             $ClientInstallResult = $true
         }
-        ElseIf ($Return.ExitCode -eq 0) {
+        ElseIf ($ExitCode -eq 0) {
             $ClientInstallResult = $true
             If ((Get-XMLConfigCMGEnabled) -eq 'True') {
                 Set-CMGRegistryValue
@@ -3503,6 +3520,7 @@ Function Test-RegistryPol {
     $RegistryPol = "$($env:WinDir)\System32\GroupPolicy\Machine\registry.pol"
     $SoftwareDistrib = "$($env:WinDir)\SoftwareDistribution"
     $CatRoot = "$($env:WinDir)\System32\catroot2"
+    $ServiceList = 'wuauserv','BITS'
 
     # Check 1 - Error in WUAHandler.log
     Write-Log -Message "Check WUAHandler.log for errors since $($StartTime)."
@@ -3562,7 +3580,7 @@ Function Test-RegistryPol {
         }
         catch { Write-Log -Message "GPO Cache: Failed to remove the registry file ($($RegistryPol))." -Type 'WARNING' }
 
-        Stop-Service -Name 'wuauserv' -Force
+        Stop-Service -Name $ServiceList -Force
         If (Test-Path -Path "$SoftwareDistrib.bak") { Remove-Item -Path "$SoftwareDistrib.bak" -Force -Recurse}
         If (Test-Path -Path $SoftwareDistrib) {
             Rename-Item -Path $SoftwareDistrib -NewName 'SoftwareDistribution.bak' -Force -Verbose
@@ -3573,7 +3591,7 @@ Function Test-RegistryPol {
             Rename-Item -Path $CatRoot -NewName 'catroot2.bak' -Force -Verbose
             Write-Log -Message "Renamed '$CatRoot' to 'catroot2.bak'"
         }
-        Start-Service -Name 'wuauserv'
+        Start-Service -Name $ServiceList
         
         Start-Sleep -Second 5
         
