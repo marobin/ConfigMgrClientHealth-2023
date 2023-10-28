@@ -1,0 +1,18 @@
+<QueryList>
+  	<Query Id="0" Path="Microsoft-Windows-TaskScheduler/Operational">
+    		<Select Path="Microsoft-Windows-TaskScheduler/Operational">
+			*[EventData[Data[@Name="TaskName"]="\ConfigMgr Client Health Remediation Script"]]
+		</Select>
+  	</Query>
+    <Query Id="1" Path="Microsoft-Windows-NetworkProfile/Operational">
+        <Select Path="Microsoft-Windows-NetworkProfile/Operational">
+            *[System[ 
+            Provider[@Name='Microsoft-Windows-NetworkProfile'] and (EventID=10000)
+            ] 
+            and EventData[ 
+            Data[@Name='Name']!='Identification...' 
+            and Data[@Name='Type']=1]
+            ]
+        </Select>
+    </Query>
+</QueryList>
