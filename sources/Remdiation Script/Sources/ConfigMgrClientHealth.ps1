@@ -187,7 +187,7 @@ if ($Config) {
 
     $clientCacheSize = Get-XMLConfigClientCache
     #replace to account for multiple skipreqs and escape the character
-    $clientInstallProperties = $propertyString.Replace(';', '`;')
+    $clientInstallProperties = $propertyString -replace '%CHInstallPath%',"$ScriptPath" #.Replace(';', '`;')
     $clientAutoUpgrade = (Get-XMLConfigClientAutoUpgrade).ToLower()
     $AdminShare = Get-XMLConfigRemediationAdminShare
     $ClientProvisioningMode = Get-XMLConfigRemediationClientProvisioningMode
@@ -387,7 +387,7 @@ Write-Log -Message 'Validating CCMClient provisioning mode...'
 if (($ClientProvisioningMode -like 'True') -eq $true) { Test-ProvisioningMode -log $log }
 Write-Log -Message 'Validating CCMClient certificate...'
 
-if ((Get-XMLConfigRemediationClientCertificate -like 'True') -eq $true) { Test-CCMCertificateError -Log $Log }
+if ((Get-XMLConfigRemediationSMSCertificate -like 'True') -eq $true) { Test-CCMCertificateError -Log $Log }
 if (Get-XMLConfigHardwareInventoryEnable -like 'True') { Test-SCCMHardwareInventoryScan -Log $log }
 
 
