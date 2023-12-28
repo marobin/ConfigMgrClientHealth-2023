@@ -589,13 +589,13 @@ Function Update-SQL {
     $query = "begin tran
         if exists (SELECT * FROM $table WITH (updlock,serializable) WHERE Hostname='"+ $log.Hostname + "')
         begin
-            UPDATE $table SET Operatingsystem='"+ $log.Operatingsystem + "', Architecture='" + $log.Architecture + "', Build='" + $log.Build + "', Manufacturer='" + $log.Manufacturer + "', Model='" + $log.Model + "', InstallDate='" + $log.InstallDate + "', $q1 LastLoggedOnUser='" + $log.LastLoggedOnUser + "', ClientVersion='" + $log.ClientVersion + "', PSVersion='" + $log.PSVersion + "', PSBuild='" + $log.PSBuild + "', Sitecode='" + $log.Sitecode + "', Domain='" + $log.Domain + "', MaxLogSize='" + $log.MaxLogSize + "', MaxLogHistory='" + $log.MaxLogHistory + "', CacheSize='" + $log.CacheSize + "', ClientAuthCertificate='" + $log.ClientAuthCertificate + "', ClientCertificate='" + $log.ClientCertificate + "', ProvisioningMode='" + $log.ProvisioningMode + "', DNS='" + $log.DNS + "', Drivers='" + $log.Drivers + "', Updates='" + $log.Updates + "', PendingReboot='" + $log.PendingReboot + "', LastBootTime='" + $log.LastBootTime + "', OSDiskFreeSpace='" + $log.OSDiskFreeSpace + "', Services='" + $log.Services + "', AdminShare='" + $log.AdminShare + "', StateMessages='" + $log.StateMessages + "', WUAHandler='" + $log.WUAHandler + "', WMI='" + $log.WMI + "', RefreshComplianceState='" + $log.RefreshComplianceState + "', HWInventory='" + $log.HWInventory + "', Version='" + $Version + "', $q10 Timestamp='" + $smallDateTime + "', SWMetering='" + $log.SWMetering + "', BITS='" + $log.BITS + "', PatchLevel='" + $Log.PatchLevel + "', ClientInstalledReason='" + $log.ClientInstalledReason + "'
+            UPDATE $table SET Operatingsystem='"+ $log.Operatingsystem + "', Architecture='" + $log.Architecture + "', Build='" + $log.Build + "', Manufacturer='" + $log.Manufacturer + "', Model='" + $log.Model + "', InstallDate='" + $log.InstallDate + "', $q1 LastLoggedOnUser='" + $log.LastLoggedOnUser + "', ClientVersion='" + $log.ClientVersion + "', PSVersion='" + $log.PSVersion + "', PSBuild='" + $log.PSBuild + "', Sitecode='" + $log.Sitecode + "', Domain='" + $log.Domain + "', MaxLogSize='" + $log.MaxLogSize + "', MaxLogHistory='" + $log.MaxLogHistory + "', CacheSize='" + $log.CacheSize + "', ClientAuthCertificate='" + $log.ClientAuthCertificate + "', SMSCertificate='" + $log.SMSCertificate + "', ProvisioningMode='" + $log.ProvisioningMode + "', DNS='" + $log.DNS + "', Drivers='" + $log.Drivers + "', Updates='" + $log.Updates + "', PendingReboot='" + $log.PendingReboot + "', LastBootTime='" + $log.LastBootTime + "', OSDiskFreeSpace='" + $log.OSDiskFreeSpace + "', Services='" + $log.Services + "', AdminShare='" + $log.AdminShare + "', StateMessages='" + $log.StateMessages + "', WUAHandler='" + $log.WUAHandler + "', WMI='" + $log.WMI + "', RefreshComplianceState='" + $log.RefreshComplianceState + "', HWInventory='" + $log.HWInventory + "', Version='" + $Version + "', $q10 Timestamp='" + $smallDateTime + "', SWMetering='" + $log.SWMetering + "', BITS='" + $log.BITS + "', PatchLevel='" + $Log.PatchLevel + "', ClientInstalledReason='" + $log.ClientInstalledReason + "', Compliant='" + $Log.Compliant + "'
             WHERE Hostname = '"+ $log.Hostname + "'
         end
         else
         begin
-            INSERT INTO $table (ComputerSID, Hostname, Operatingsystem, Architecture, Build, Manufacturer, Model, InstallDate, $q2 LastLoggedOnUser, ClientVersion, PSVersion, PSBuild, Sitecode, Domain, MaxLogSize, MaxLogHistory, CacheSize, ClientAuthCertificate, ClientCertificate, ProvisioningMode, DNS, Drivers, Updates, PendingReboot, LastBootTime, OSDiskFreeSpace, Services, AdminShare, StateMessages, WUAHandler, WMI, RefreshComplianceState, HWInventory, Version, $q20 Timestamp, SWMetering, BITS, PatchLevel, ClientInstalledReason)
-            VALUES ('" + $log.ComputerSID + "', '" + $log.Hostname + "', '" + $log.Operatingsystem + "', '" + $log.Architecture + "', '" + $log.Build + "', '" + $log.Manufacturer + "', '" + $log.Model + "', '" + $log.InstallDate + "', $q3 '" + $log.LastLoggedOnUser + "', '" + $log.ClientVersion + "', '" + $log.PSVersion + "', '" + $log.PSBuild + "', '" + $log.Sitecode + "', '" + $log.Domain + "', '" + $log.MaxLogSize + "', '" + $log.MaxLogHistory + "', '" + $log.CacheSize + "', '" + $log.ClientAuthCertificate + "', '" + $log.ClientCertificate + "', '" + $log.ProvisioningMode + "', '" + $log.DNS + "', '" + $log.Drivers + "', '" + $log.Updates + "', '" + $log.PendingReboot + "', '" + $log.LastBootTime + "', '" + $log.OSDiskFreeSpace + "', '" + $log.Services + "', '" + $log.AdminShare + "', '" + $log.StateMessages + "', '" + $log.WUAHandler + "', '" + $log.WMI + "', '" + $log.RefreshComplianceState + "', '" + $log.HWInventory + "', '" + $log.Version + "', $q30 '" + $smallDateTime + "', '" + $log.SWMetering + "', '" + $log.BITS + "', '" + $Log.PatchLevel + "', '" + $Log.ClientInstalledReason + "')
+            INSERT INTO $table (ComputerSID, Hostname, Operatingsystem, Architecture, Build, Manufacturer, Model, InstallDate, $q2 LastLoggedOnUser, ClientVersion, PSVersion, PSBuild, Sitecode, Domain, MaxLogSize, MaxLogHistory, CacheSize, ClientAuthCertificate, SMSCertificate, ProvisioningMode, DNS, Drivers, Updates, PendingReboot, LastBootTime, OSDiskFreeSpace, Services, AdminShare, StateMessages, WUAHandler, WMI, RefreshComplianceState, HWInventory, Version, $q20 Timestamp, SWMetering, BITS, PatchLevel, ClientInstalledReason, Compliant)
+            VALUES ('" + $log.ComputerSID + "', '" + $log.Hostname + "', '" + $log.Operatingsystem + "', '" + $log.Architecture + "', '" + $log.Build + "', '" + $log.Manufacturer + "', '" + $log.Model + "', '" + $log.InstallDate + "', $q3 '" + $log.LastLoggedOnUser + "', '" + $log.ClientVersion + "', '" + $log.PSVersion + "', '" + $log.PSBuild + "', '" + $log.Sitecode + "', '" + $log.Domain + "', '" + $log.MaxLogSize + "', '" + $log.MaxLogHistory + "', '" + $log.CacheSize + "', '" + $log.ClientAuthCertificate + "', '" + $log.SMSCertificate + "', '" + $log.ProvisioningMode + "', '" + $log.DNS + "', '" + $log.Drivers + "', '" + $log.Updates + "', '" + $log.PendingReboot + "', '" + $log.LastBootTime + "', '" + $log.OSDiskFreeSpace + "', '" + $log.Services + "', '" + $log.AdminShare + "', '" + $log.StateMessages + "', '" + $log.WUAHandler + "', '" + $log.WMI + "', '" + $log.RefreshComplianceState + "', '" + $log.HWInventory + "', '" + $log.Version + "', $q30 '" + $smallDateTime + "', '" + $log.SWMetering + "', '" + $log.BITS + "', '" + $Log.PatchLevel + "', '" + $Log.ClientInstalledReason + "', '" + $Log.Compliant + "')
         end
         commit tran"
 
@@ -798,7 +798,7 @@ Function New-LogObject {
     $DNS = 'Unknown'
     $Drivers = 'Unknown'
     $ClientAuthCertificate = 'Unknown'
-    $ClientCertificate = 'Unknown'
+    $SMSCertificate = 'Unknown'
     $PendingReboot = 'Unknown'
     $RebootApp = 'Unknown'
     $LastBootTime = Get-SmallDateTime -Date ($WMIOperatingSystem.LastBootUpTime)
@@ -818,6 +818,7 @@ Function New-LogObject {
     $UBR = Get-UBR
     $BITS = $null
     $ClientSettings = $null
+    $Compliant = 'Unknown'
 
     $obj = New-Object PSObject -Property @{
         ComputerSID            = $ComputerSID
@@ -839,7 +840,7 @@ Function New-LogObject {
         MaxLogHistory          = $MaxLogHistory
         CacheSize              = $CacheSize
         ClientAuthCertificate  = $ClientAuthCertificate
-        ClientCertificate      = $ClientCertificate
+        SMSCertificate         = $SMSCertificate
         ProvisioningMode       = $ProvisioningMode
         DNS                    = $DNS
         Drivers                = $Drivers
@@ -863,6 +864,7 @@ Function New-LogObject {
         PatchLevel             = $UBR
         ClientInstalledReason  = $null
         RebootApp              = $RebootApp
+        Compliant              = $Compliant
     }
     Return $obj
     # Write-Log -Message "End New-LogObject"
@@ -896,7 +898,7 @@ Function Test-IsClientHealthy {
     $TestList = @(
         @{Name = 'WMI'; Value = 'Compliant'; Enabled = $(If (((Get-XMLConfigWMIRepairEnable) -eq 'True') -and ((Get-XMLConfigWMI) -eq 'True')){$true} Else {$False}) }
         @{Name = 'DNS'; Value = 'Compliant'; Enabled = $(If (((Get-XMLConfigDNSCheck) -eq 'True') -and ((Get-XMLConfigDNSFix) -eq 'True')) {$true} Else {$False})}
-        @{Name = 'ClientCertificate'; Value = 'Compliant'; Enabled = [bool](Get-XMLConfigRemediationClientCertificate)}
+        @{Name = 'SMSCertificate'; Value = 'Compliant'; Enabled = [bool](Get-XMLConfigRemediationSMSCertificate)}
         @{Name = 'ClientAuthCertificate'; Value = 'Compliant'; Enabled = $(If (((Get-XMLConfigClientAuthCertEnabled) -eq 'True') -and ((Get-XMLConfigClientAuthCertFix) -eq 'True')) {$true} Else {$False})}
         @{Name = 'ProvisioningMode'; Value = 'Compliant'; Enabled = [bool](Get-XMLConfigRemediationClientProvisioningMode)}
         @{Name = 'WUAHandler'; Value = 'Compliant'; Enabled = [bool](Get-XMLConfigRemediationClientWUAHandler)}
@@ -944,6 +946,7 @@ Function Test-IsClientHealthy {
     $Error.Clear()
 
     Write-Verbose -Message "End Test-IsClientHealthy (Result = $Result)"
+    $Script:Log.Compliant = $Result
     Return $Result
 }
 
@@ -980,7 +983,7 @@ Function Update-LogFile {
         'MaxLogHistory',
         'CacheSize',
         'ClientAuthCertificate',
-        'ClientCertificate',
+        'SMSCertificate',
         'ProvisioningMode',
         'DNS',
         'PendingReboot',
@@ -1001,6 +1004,7 @@ Function Update-LogFile {
         'ClientSettings',
         'PatchLevel',
         'ClientInstalledReason'
+        'Compliant'
     )
     $text += $log | Select-Object -Property $SelectProperty | Out-String
     $text = $text.replace("`t", "")
@@ -1435,8 +1439,14 @@ Function Get-ClientMaxLogHistory {
 }
 
 Function Get-CCMLogDirectory {
-    [String]$obj = (Get-ItemProperty -Path $SCCMLoggingKey).LogDirectory
-    if ("$obj" -eq '') { 
+    Try {
+        [String]$obj = (Get-ItemProperty -Path $SCCMLoggingKey -EA Stop).LogDirectory
+        if ("$obj" -eq '') { 
+            Throw
+        }
+    }
+    Catch {
+        $Error.RemoveAt(0)
         $obj = "$env:SystemDrive\windows\ccm\Logs" 
     }
     Return $obj
@@ -1547,19 +1557,19 @@ function Test-CCMCertificateError {
         Start-Service -Name ccmexec
 
         # Update log object
-        $log.ClientCertificate = 'Missing'
+        $log.SMSCertificate = 'Missing'
     }
 
     #$content = Get-Content -Path $logFile2
     if ($content -match $error2) {
         $ok = $false
         Write-Log -Message 'ConfigMgr Client Certificate: Error! Server rejected client registration. Client Certificate not valid. No auto-remediation.' -Type 'ERROR'
-        $log.ClientCertificate = 'Server rejected registration'
+        $log.SMSCertificate = 'Server rejected registration'
     }
 
     if ($ok -eq $true) {
         Write-Log -Message 'ConfigMgr Client Certificate: OK'
-        $log.ClientCertificate = 'Compliant'
+        $log.SMSCertificate = 'Compliant'
     }
 }
 
@@ -2198,6 +2208,9 @@ Function Test-ClientLogSize {
             #>
             
         # Rewrote after the WMI Method stopped working in previous CM client version
+        If (! (Test-Path -Path $SCCMLoggingKey)) {
+            $null = New-Item -Path $SCCMLoggingKey -Force
+        }
         $null = New-ItemProperty -Path $SCCMLoggingKey -Name LogMaxHistory -PropertyType DWORD -Value $clientLogMaxHistory -Force
         $null = New-ItemProperty -Path $SCCMLoggingKey -Name LogMaxSize -PropertyType DWORD -Value $newLogSize -Force
 
@@ -2249,8 +2262,9 @@ Function Resolve-Client {
             If (! (Test-Path -Path "$Script:ScriptPath\CMClient")) {
                 $null = New-Item -Path "$Script:ScriptPath\CMClient" -ItemType Directory -Force -Verbose
             }
+            Write-Log -Message "Copying client sources from '$ClientShare' to '$Script:ScriptPath\CMClient'"
             Copy-Item -Path "$ClientShare\*" -Destination "$Script:ScriptPath\CMClient" -Recurse -Force -Verbose
-            Write-Log -Message "Copied client sources from '$ClientShare' to '$Script:ScriptPath\CMClient'"
+            Write-Log -Message "Done"
             $ClientShare = "$Script:ScriptPath\CMClient"
         }
         $SetupPath = "$ClientShare\ccmsetup.exe"
@@ -4073,9 +4087,9 @@ Function Get-XMLConfigRefreshComplianceStateDays {
     Return $obj
 }
 
-Function Get-XMLConfigRemediationClientCertificate {
+Function Get-XMLConfigRemediationSMSCertificate {
     if ($config) {
-        $obj = $Xml.Configuration.Remediation | Where-Object { $_.Name -like 'ClientCertificate' } | Select-Object -ExpandProperty 'Fix'
+        $obj = $Xml.Configuration.Remediation | Where-Object { $_.Name -like 'SMSCertificate' } | Select-Object -ExpandProperty 'Fix'
     }
     Return $obj
 }

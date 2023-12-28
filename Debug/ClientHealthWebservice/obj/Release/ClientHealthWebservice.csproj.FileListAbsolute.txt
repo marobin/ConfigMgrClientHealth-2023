@@ -1,0 +1,12 @@
+E:\_GITHUB\ConfigMgrClientHealth-bis\Debug\ClientHealthWebservice\bin\Release\ClientHealthWebservice.dll
+E:\_GITHUB\ConfigMgrClientHealth-bis\Debug\ClientHealthWebservice\bin\Release\ClientHealthWebservice.pdb
+E:\_GITHUB\ConfigMgrClientHealth-bis\Debug\ClientHealthWebservice\bin\Release\EntityFramework.dll
+E:\_GITHUB\ConfigMgrClientHealth-bis\Debug\ClientHealthWebservice\bin\Release\System.Web.Http.dll
+E:\_GITHUB\ConfigMgrClientHealth-bis\Debug\ClientHealthWebservice\bin\Release\System.Web.Http.WebHost.dll
+E:\_GITHUB\ConfigMgrClientHealth-bis\Debug\ClientHealthWebservice\bin\Release\System.Web.Mvc.dll
+E:\_GITHUB\ConfigMgrClientHealth-bis\Debug\ClientHealthWebservice\bin\Release\System.Web.Optimization.dll
+E:\_GITHUB\ConfigMgrClientHealth-bis\Debug\ClientHealthWebservice\obj\Release\ClientHealthWebservice.csproj.AssemblyReference.cache
+E:\_GITHUB\ConfigMgrClientHealth-bis\Debug\ClientHealthWebservice\obj\Release\ClientHealthWebservice.csproj.CoreCompileInputs.cache
+E:\_GITHUB\ConfigMgrClientHealth-bis\Debug\ClientHealthWebservice\obj\Release\ClientHealthWebservice.csproj.CopyComplete
+E:\_GITHUB\ConfigMgrClientHealth-bis\Debug\ClientHealthWebservice\obj\Release\ClientHealthWebservice.dll
+E:\_GITHUB\ConfigMgrClientHealth-bis\Debug\ClientHealthWebservice\obj\Release\ClientHealthWebservice.pdb

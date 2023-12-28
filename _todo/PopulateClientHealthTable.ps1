@@ -4,7 +4,16 @@ Param (
     [String]$Server,
 
     [Parameter()]
-    [String[]]$DomainList
+    [String[]]$DomainList = ('corp.contoso.com'),
+
+    [Parameter()]
+    [String]$BaseName = 'Test',
+
+    [Parameter()]
+    [int]$StartIndex = 1,
+
+    [Parameter()]
+    [int]$EndIndex = 1000
 )
 
 Function Update-Webservice {
@@ -90,7 +99,7 @@ Function New-LogObject {
     # Write-Log -Message "Start New-LogObject"
 
     # Handles different OS languages
-    $ComputerSID = [System.Security.Principal.NTAccount]::new("$env:COMPUTERNAME$").Translate([System.Security.Principal.SecurityIdentifier]).Value
+    #$ComputerSID = [System.Security.Principal.NTAccount]::new("$env:COMPUTERNAME$").Translate([System.Security.Principal.SecurityIdentifier]).Value
     
     $OperatingSystem = Get-Random -InputObject ('Microsoft Windows 10 Entreprise','Microsoft Windows 11 Entreprise','Microsoft Windows 10 Professional', 'Microsoft Windows 11 Professional')
     $Architecture = Get-Random -InputObject ('64-Bit','32-Bit')
@@ -111,7 +120,7 @@ Function New-LogObject {
     $DNS = Get-Random -InputObject ('Compliant', 'Repaired', 'Skipped')
     $Drivers = Get-Random -InputObject ('Compliant', 'unknown or faulty driver(s)')
     $ClientAuthCertificate = Get-Random -InputObject ('Compliant', 'Missing', 'Server rejected registration')
-    $ClientCertificate = Get-Random -InputObject ('Compliant', 'Missing', 'Server rejected registration')
+    $SMSCertificate = Get-Random -InputObject ('Compliant', 'Missing', 'Server rejected registration')
     $PendingReboot = Get-Random -InputObject ('Compliant', 'Pending Reboot')
     $RebootApp = 'Unknown'
     $LastBootTime = Get-SmallDateTime -Date ((Get-Date).AddHours(-(Get-Random -InputObject (25..300))))
@@ -130,9 +139,10 @@ Function New-LogObject {
     $UBR = Get-Random -InputObject (100..5000)
     $BITS = Get-Random -InputObject ('Compliant', 'Remediated', 'Error', 'PS Module BitsTransfer missing')
     $ClientSettings = Get-Random -InputObject ('Compliant', 'Remediated', 'Error')
+    $IsCompliant = Get-Random -InputObject ($True, $false)
 
     [PSCustomObject]@{
-        ComputerSID            = $ComputerSID
+        #ComputerSID            = $ComputerSID
         Hostname               = $Hostname
         Operatingsystem        = $OperatingSystem
         Architecture           = $Architecture
@@ -151,7 +161,7 @@ Function New-LogObject {
         MaxLogHistory          = $MaxLogHistory
         CacheSize              = $CacheSize
         ClientAuthCertificate  = $ClientAuthCertificate
-        ClientCertificate      = $ClientCertificate
+        SMSCertificate         = $SMSCertificate
         ProvisioningMode       = $ProvisioningMode
         DNS                    = $DNS
         Drivers                = $Drivers
@@ -175,14 +185,15 @@ Function New-LogObject {
         PatchLevel             = $UBR
         ClientInstalledReason  = Get-Random ('ConfigMgr Client database files missing (%WINDIR%\CCM*.sdf)', "ConfigMgr Client database corrupt (CcmSQLCELog)", "Service not running, failed to start (ccmexec)", "Failed to connect to SMS_Client WMI class (root/ccm:SMS_Client)", "No agent found", "Corrupt WMI", "Below minimum verison" ,"Upgrade failed")
         RebootApp              = $RebootApp
+        Compliant              = $IsCompliant
     }
 }
 
 $ScriptPath = "$PSScriptRoot"
 $URi = "https://$Server/ConfigMgrClientHealth"
 
-For ($i = 3; $i -lt 4; $i++) {
-    $HostName = 'Test{0:D10}' -f $i
+For ($i = $StartIndex; $i -lt $EndIndex; $i++) {
+    $HostName = '{0}{1:D5}' -f $BaseName, $i
     $Log = New-LogObject -HostName $Hostname
     Update-Webservice -URI $uri -Log $Log -HostName $Hostname -Verbose
 }
