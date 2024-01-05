@@ -31,6 +31,7 @@
 	<Option Name="RefreshComplianceState" Days="7" Enable="True"/>
 	<Option Name="AllowCMG" FQDN="" Enable="False"/>
 	<Option Name="ClientAuthCert" Template="" Fix="True" Enable="False"/>
+	<Option Name="DisableTaskWhenCompliant" Enable="True"/>
 	<Service Name="BITS" StartupType="Automatic (Delayed Start)" State="Running" Uptime=""/>
 	<Service Name="winmgmt" StartupType="Automatic" State="Running" Uptime=""/>
 	<Service Name="wuauserv" StartupType="Automatic (Delayed Start)" State="Running" Uptime=""/>

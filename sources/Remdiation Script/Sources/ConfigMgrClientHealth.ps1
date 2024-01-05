@@ -557,7 +557,7 @@ if ($PSBoundParameters.ContainsKey('Webservice')) {
 }
 
 # Disable the scheduled task once the client is healthy
-If (Test-IsClientHealthy) {
+If ((Test-IsClientHealthy) -and ((Get-XMLConfigDisableTaskWhenCompliant) -eq 'True')) {
     Disable-ScheduledTask -TaskPath '\' -TaskName "$ClientHealthTaskName*"
     Write-Log -Message "Client is healthy, disabling the scheduled task"
 }

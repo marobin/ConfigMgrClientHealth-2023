@@ -3838,6 +3838,13 @@ Function Get-XMLConfigClientAuthCertFix {
     Return $obj
 }
 
+Function Get-XMLConfigDisableTaskWhenCompliant {
+    If ($Config) {
+        $obj = $Xml.Configuration.Option | Where-Object { $_.Name -eq 'DisableTaskWhenCompliant' } | Select-Object -ExpandProperty 'Enable' 
+    }
+    Return $obj
+}
+
 Function Get-XMLConfigLoggingShare {
     if ($config) {
         $obj = $Xml.Configuration.Log | Where-Object { $_.Name -like 'File' } | Select-Object -ExpandProperty 'Share'
