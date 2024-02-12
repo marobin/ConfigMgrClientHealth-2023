@@ -10,13 +10,18 @@ Param (
 )
 
 If (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-    Throw 'Powershell not running as Administrator'
+    Throw 'Powershell not running in an elevated session'
     Exit 1
 }
 
+############################ Fill out the following variables ################################
 $PrimaryServer = ''
 $SvcAccountName = ''
 $SvcAccountPassword = ''
+$DomainTranslationTable = @(
+    @{Name = 'Domain Name'; Netbios = 'NETBIOS'; Domain = 'domain.com'; MP = 'https://MP.domain.com'; Env = 'Prod'}
+)
+##############################################################################################
 
 $DateTimeFormat = 'yyyy-MM-dd HH:mm:ss.fff'
 $CHRegKey = 'HKLM:\SOFTWARE\ConfigMgrClientHealth'
@@ -32,9 +37,6 @@ If ((Test-Path -Path $Sources) -and (Test-Path -Path "$env:SystemRoot\System32\T
 $Error.Clear()
 
 # Get management point from domain
-$DomainTranslationTable = @(
-    @{Name = 'Domain Name'; Netbios = 'NETBIOS'; Domain = 'domain.com'; MP = 'https://MP.domain.com'; Env = 'Prod'}
-)
 $ComputerDomain = Get-WmiObject -Class Win32_ComputerSystem -Property Domain | Select-Object -ExpandProperty Domain
 Write-Verbose -Message "$(Get-Date -Format $DateTimeFormat) - Computer domain : $ComputerDomain"
 
@@ -114,6 +116,7 @@ If ($Force.IsPresent -eq $false) {
     }
 }
 
+# Select the config file linked to the current domain
 $ConfigFile = Get-ChildItem -Path $Sources -Filter 'config-*.xml' | 
                     Where-Object {
                         ((([xml](Get-Content -Path $_.FullName -Raw)).Configuration.Client | 
@@ -153,6 +156,7 @@ foreach ($folder in ($InstallFolder, $LogFolder)) {
     Write-Verbose -Message "$(Get-Date -Format $DateTimeFormat) - Block read access for standard user on '$folder'"
 }
 
+# Modify the %CHInstallPath% in the config file using the script installation path
 (Get-Content -Path $ConfigFile.FullName) -replace '%CHInstallPath%', $Sources | Set-Content -Path $ConfigFile.FullName -Force
 Write-Verbose -Message "$(Get-Date -Format $DateTimeFormat) - Replace variable 'CHInstallPath' in '$($ConfigFile.FullName)' with '$Sources'"
 
