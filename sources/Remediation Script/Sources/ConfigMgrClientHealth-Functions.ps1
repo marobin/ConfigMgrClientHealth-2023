@@ -108,7 +108,7 @@ Function Get-OperatingSystem {
                     }
                     Catch{
                         $Error.RemoveAt(0)
-                        [String]$build = 'Insider preview'
+                        [String]$build = "$($_.BuildNumber)"
                     }
                     $build
                 }
@@ -698,21 +698,27 @@ Function Search-CMLogFile {
     Write-Log -Message "Parsing log file '$LogFile'"
     #Get the log data.
     $LogData = Get-Content -Path $LogFile
-    $CMTraceLog = Get-CMTraceLog -LogFile $LogFile | Where-Object {$_.DateTime -ge $StartTime}
+    [PSCustomObject[]]$CMTraceLog = Get-CMTraceLog -LogFile $LogFile 
+    [PSCustomObject[]]$MatchingLines = $CMTraceLog | 
+                        Where-Object -Property DateTime -ge $StartTime |
+                        Where-Object { $_.Message | Select-String -Pattern $SearchStrings -Quiet } | 
+                        Sort-Object -Property DateTime -Descending | 
+                        Select-Object -First 1
 
-    If ($null -eq $CMTraceLog) {
+    If ($null -eq $MatchingLines) {
         #If we have gone beyond the start time then stop searching.
-        Write-Log -Message "No log lines in $($LogFile) matched $($SearchStrings) before $($StartTime)." -Type 'WARNING'
+        Write-Log -Message "No log lines in [$LogFile] matched [$SearchStrings] after [$StartTime]." -Type 'WARNING'
     }
     Else {
-        $NonMatchingLines = Compare-Object -ReferenceObject (1..$LogData.Count) -DifferenceObject $CMTraceLog.LineNumber | Where-Object {$_.SideIndicator -eq '<='} | Select-Object -ExpandProperty InputObject
+        $NonMatchingLines = Compare-Object -ReferenceObject (1..$LogData.Count) -DifferenceObject $CMTraceLog.LineNumber |
+                                Where-Object -Property SideIndicator -eq '<=' | 
+                                Select-Object -ExpandProperty InputObject
         Foreach ($line in $NonMatchingLines) {
-            Write-Log -Message "Could not parse the line $($line) in '$($LogFile)': $($LogData[($line - 1)])" -Type 'WARNING'
+            Write-Log -Message "Could not parse the line [$line] in '$LogFile': $($LogData[($line - 1)])" -Type 'WARNING'
         }
-        $MatchingLines = $CMTraceLog | Where-Object {$_.Message | Select-String -Pattern $SearchStrings -Quiet} | Sort-Object -Property DateTime -Descending | Select-Object -First 1
         #Loop through each search string looking for a match.
         Foreach ($line in $MatchingLines) {
-            Write-Log -Message "Found a match line $($line.LineNumber) in '$($LogFile)' for '$($SearchStrings -join ', ')' : $($line.Message)"
+            Write-Log -Message "Found a matching line $($line.LineNumber) in '$LogFile' for '$($SearchStrings -join ', ')' : $($line.Message)"
             $line
         }
     }
@@ -1963,7 +1969,7 @@ Function Invoke-SCCMClientCleanup {
         "$env:SystemRoot\ProgramData\Microsoft\Crypto\RSA\MachineKeys\19c5cf9*",
         'HKLM:\Software\Microsoft\SystemCertificates\SMS\Certificates\*',
         "$env:SystemRoot\CCM"
-    ) | Select-Object -Unique
+    ).Foreach({$_}) | Select-Object -Unique
 
     # Stop the related processes
     Get-Process -Name 'CCM*', 'CmRcService' -ErrorAction SilentlyContinue | Stop-Process -Force -Verbose
@@ -2008,19 +2014,30 @@ Function Invoke-SCCMClientCleanup {
     Write-Log -Message "Waiting for 15 seconds"
     Start-Sleep -Seconds 15
 
-    ForEach ($item in $ItemsToDelete) {
+    ForEach ($item in $ItemsToBeDeleted) {
         If (("$item" -ne '') -and (Test-Path -Path $item)) {
             Try {
-                If (($Item -notmatch '(Cert|HKLM):') -and (Test-Path -Path $Item)) {
-                    Get-ChildItem -Path $item -Recurse -File -ErrorAction Continue | Remove-Item -Force -ErrorAction Stop -Confirm:$False -Verbose
-                }
-                If (Test-Path -Path $Item) {
-                    Remove-Item -Path $item -Recurse -Force -ErrorAction Continue -Confirm:$False
+                $Type = (Get-Item -Path $Item | Select-Object -First 1).GetType().Name
+                Write-Log -Message "Removing [$Type] '$item'"
+                Switch ($Type) {
+                    'FileInfo' {
+                        Remove-Item -Path $Item -Force -ErrorAction Stop -Confirm:$False
+                    }
+                    'DirectoryInfo' {
+                        Get-ChildItem -Path $item -Recurse -File -ErrorAction Ignore -Verbose | Remove-Item -Force -ErrorAction Stop -Confirm:$False -Verbose
+                        Get-ChildItem -Path $Item -Recurse -Directory -ErrorAction Ignore -Verbose | Remove-Item -Recurse -Force -ErrorAction Stop -Confirm:$False -Verbose
+                        If (Test-Path -Path $Item) {
+                            Remove-Item -Path $item -Force -Recurse -ErrorAction Stop -Confirm:$False
+                        }
+                    }
+                    Default {
+                        Remove-Item -Path $item -Force -Recurse -ErrorAction Stop -Confirm:$False -Verbose
+                    }
                 }
                 Write-Log -Message "Removed '$item'"
             }
             Catch {
-                Write-Log -Message "Failed to remove '$item'"
+                Write-Log -Message "Failed to remove '$item' : $($_.Exception.Message)"
             }
         }
     }
@@ -2348,7 +2365,7 @@ Function Resolve-Client {
         Write-Log -Message "Trigger ConfigMgr Client installation"
         Write-Log -Message "Client install string: $SetupPath $ClientInstallProperties"
         $Return = Invoke-Executable -FilePath "$SetupPath" -ArgumentList "$ClientInstallProperties" -IgnoreExitCode @(0,3010,7)
-        
+
         Start-Sleep -Seconds 5
         # Test if a child process is still running
         $ProcessID = Get-WMIClassInstance -Class Win32_Process -Filter 'CommandLine LIKE "%ccmsetup%"' -Property ProcessId | Select-Object -ExpandProperty ProcessId
@@ -2357,6 +2374,7 @@ Function Resolve-Client {
             Write-Log -Message "Main process has exited with exit code $($Return.ExitCode), waiting for child process $ProcessId to end..."
             $Process = Get-Process -Id $ProcessID
             $Process.WaitForExit()
+            Write-Log -Message "Child process has exited with exit code $($Process.ExitCode)"
             $CCMLogPath = "$env:SystemRoot\ccmsetup\Logs\ccmsetup.log"
             If (Test-Path -Path $CCMLogPath) {
                 $ExitCode += (Select-String -Path $CCMLogPath -Pattern 'CcmSetup is exiting with return code (?<ExitCode>[-\d]+)').Matches.Groups.Where({$_.Name -eq 'ExitCode'}).Value | Select-Object -Last 1
@@ -3530,49 +3548,81 @@ Function Test-RegistryPol {
         [Parameter(Mandatory = $true)]$Log
     )
     $log.WUAHandler = "Checking"
-    $RepairReason = ""
-    $RegistryPol = "$($env:WinDir)\System32\GroupPolicy\Machine\registry.pol"
-    $SoftwareDistrib = "$($env:WinDir)\SoftwareDistribution"
-    $CatRoot = "$($env:WinDir)\System32\catroot2"
-    $ServiceList = 'wuauserv','BITS'
+    $RepairReason = @()
+    $RegistryPol = "$env:SystemRoot\System32\GroupPolicy\Machine\registry.pol"
+    $WUAHandlerlogFile = "$Script:CCMLogDir\WUAHandler.log"
+    $SoftwareDistrib = "$env:SystemRoot\SoftwareDistribution"
+    $CatRoot = "$env:SystemRoot\System32\catroot2"
+    $ServiceList = 'wuauserv', 'BITS', 'cryptsvc'
 
     # Check 1 - Error in WUAHandler.log
-    Write-Log -Message "Check WUAHandler.log for errors since $($StartTime)."
-    $WUAHandlerlogFile = "$Script:CCMLogDir\WUAHandler.log"
-    $logLine = Search-CMLogFile -LogFile $WUAHandlerlogFile -StartTime $StartTime -SearchStrings @('0x80004005', '0x87d00692')
-    if ($logLine) { $RepairReason = "WUAHandler Log" }
+    Write-Log -Message "Check WUAHandler.log for errors since $StartTime."
+    $logLine = Search-CMLogFile -LogFile $WUAHandlerlogFile -StartTime $StartTime -SearchStrings @('0x80004005', '0x87d00692', '0x800703ee')
+    # 0x80004005 = Unspecified Error (Generic)
+    # 0x87d00692 = Group Policy Conflict
+    # 0x800703ee = The open file is no longer valid because the volume containing it has been damaged externally.
+    # 0x80240033 = License terms could not be downloaded.
+    # 0x80244007 = Same as SOAPCLIENT_SOAPFAULT - SOAP client failed because there was a SOAP fault for reasons of WU_E_PT_SOAP_* error codes.
+    # 0x80240438 =
+    # 0x8024402c = Same as ERROR_WINHTTP_NAME_NOT_RESOLVED - the proxy server or target server name cannot be resolved.
+    if ($null -ne $logLine) { $RepairReason += "WUAHandler" }
+    Write-Log -Message "Found $(($logLine | Measure-Object).count) error(s) in '$WUAHandlerlogFile'"
 
     # Check 2 - Registry.pol is too old.
-    if ($Days -and (Test-Path -Path $RegistryPol)) {
-        Write-Log -Message "Check machine registry file to see if it's older than $($Days) days."
+    $RegistryPolFile = Get-Item -Path $RegistryPol -Force -EA Ignore
+
+    if (($Days -gt 0) -and ($null -ne $RegistryPolFile)) {
+        Write-Log -Message "Check machine registry file to see if it's older than $Days days."
         try {
-            $fileDate = Get-ChildItem -Path $RegistryPol -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty LastWriteTime
+            $fileDate = $RegistryPolFile | Select-Object -ExpandProperty LastWriteTime
             If ($null -ne $fileDate) {
                 $regPolDate = $fileDate
             }
             Else {
                 $regPolDate = [datetime]::MinValue
             }
-            $now = Get-Date
-            if (($now - $regPolDate).Days -ge $Days) { $RepairReason = "File Age" }
+            $FileAge = ((Get-Date) - $regPolDate).Days
+            Write-Log -Message "Check machine registry file ($RegistryPol) to see if it's older than $Days days : $FileAge days"
+            if ($FileAge -ge $Days) { $RepairReason += "File Age" }
         }
         catch { Write-Log -Message "GPO Cache: Failed to check machine policy age."  -Type 'WARNING' }
+    }
+    ElseIf ($null -eq $RegistryPolFile) {
+        Write-Log -Message "GPO Cache: Could not find '$RegistryPol'." -Type WARNING
+        $RepairReason += 'File missing'
     }
 
     # Check 3 - Look back through the last 7 days for group policy processing errors.
     #Event IDs documented here: https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-vista/cc749336(v=ws.10)#troubleshooting-group-policy-using-event-logs-1
     try {
         Write-Log -Message "Checking the Group Policy event log for errors since $($StartTime)."
-        $IdList = ((7000..7007),(7017..7299),1096) | Foreach-Object {$_}
-        $FilterHashTable = @{
-            LogName = 'Microsoft-Windows-GroupPolicy/Operational'
-            Level = 2
-            StartTime = $StartTime 
-        }
-        $numberOfGPOErrors = (Get-WinEvent -Verbose:$false -FilterHashtable $FilterHashTable -ErrorAction SilentlyContinue | Where-Object { $IdList -contains $_.ID }).Count
-        if ($numberOfGPOErrors -gt 0) { $RepairReason = "Event Log" }
+        $FilterXPath = @"
+<QueryList>
+  <Query Id="0" Path="Microsoft-Windows-GroupPolicy/Operational">
+    <Select Path="Microsoft-Windows-GroupPolicy/Operational">
+        *[
+            System[
+                (Level=2)
+                and ( (EventID &gt;= 7000 and EventID &lt;= 7007)  or  (EventID &gt;= 7018 and EventID &lt;= 7299)  or EventID=1096)
+                and TimeCreated[@SystemTime&gt;='$('{0:s}.{0:fff}Z' -f $StartTime)'
+                ]
+            ]
+        ]
+    </Select>
+  </Query>
+</QueryList>
+"@
+        $LogName = ([xml]$FilterXPath).SelectNodes('//Select') | Select-Object -ExpandProperty Path
+        $GPOErrorList = Get-WinEvent -FilterXPath $FilterXPath -LogName $LogName -ErrorAction Ignore -Verbose:$false <#  |
+                        ForEach-Object {
+                            If ($_.Id -ne 7017) {$_}
+                            Else {
+                                [int]$OperationElaspedTimeInMilliSeconds = ([xml]$_.Toxml()).Event.EventData.Data.Where({$_.Name -eq 'OperationElaspedTimeInMilliSeconds'}).InnerText
+                                If ($OperationElaspedTimeInMilliSeconds -ne 0) {$_}
+                            }
+                        } #>
+        if (($GPOErrorList | Measure-Object).Count -gt 0) { $RepairReason += 'Event Log' }
         $Error.Clear()
-
     }
     catch { 
         If ($_.Exception.Message -match 'no events') {
@@ -3582,12 +3632,12 @@ Function Test-RegistryPol {
     }
 
     #If we need to repart the policy files then do so.
-    if ($RepairReason -ne "") {
-        $log.WUAHandler = "Broken ($RepairReason)"
-        Write-Log -Message "GPO Cache: Broken ($RepairReason). Deleting registry.pol and running gpupdate... This can take a few minutes" -Type 'WARNING'
+    if ($RepairReason.Count -gt 0) {
+        $log.WUAHandler = "Broken ($($RepairReason -join ','))"
+        Write-Log -Message "GPO Cache: Broken ($($RepairReason -join ',')). Deleting registry.pol and running gpupdate... This can take a few minutes" -Type 'WARNING'
 
         try { 
-            if (Test-Path -Path $RegistryPol) { 
+            if ($null -ne $RegistryPolFile) { 
                 Remove-Item $RegistryPol -Force 
                 Write-Log -Message "Removed '$RegistryPol'"
             } 
@@ -3647,7 +3697,7 @@ Function Test-RegistryPol {
         Invoke-SCCMClientAction -ClientAction 'Scan By Update Source'
         Invoke-SCCMClientAction -ClientAction 'Source Update Message'
 
-        $log.WUAHandler = "Repaired ($RepairReason)"
+        $log.WUAHandler = "Repaired ($($RepairReason -join ','))"
         Write-Log -Message "GPO Cache: $($log.WUAHandler)"
     }
     else {

@@ -152,6 +152,8 @@ $WindowBuildHash = @{
     # Windows 11
     '22000' = '21H2'
     '22621' = '22H2'
+    '22631' = '23H2'
+    '26100' = '24H2'
 }
 
 # Import Modules
@@ -187,7 +189,7 @@ if ($Config) {
 
     $clientCacheSize = Get-XMLConfigClientCache
     #replace to account for multiple skipreqs and escape the character
-    $clientInstallProperties = $propertyString -replace '%CHInstallPath%',"$ScriptPath" #.Replace(';', '`;')
+    $clientInstallProperties = $propertyString -replace '%CHInstallPath%',"$ScriptPath"
     $clientAutoUpgrade = (Get-XMLConfigClientAutoUpgrade).ToLower()
     $AdminShare = Get-XMLConfigRemediationAdminShare
     $ClientProvisioningMode = Get-XMLConfigRemediationClientProvisioningMode
