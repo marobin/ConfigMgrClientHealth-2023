@@ -42,7 +42,7 @@ param(
 $SourcePath = "$env:ALLUSERSPROFILE\ConfigMgrClientHealth"
 # TODO : Fill up the following table with your domains
 $DomainTranslationTable = @(
-    @{Netbios = 'CORP'; Domain = 'corp.contoso.com'; Credential = $null}
+    @{Netbios = 'CORP'; Domain = 'corp.contoso.com'; Credential = $null }
 )
 #endregion variables
 
@@ -58,7 +58,7 @@ Try {
         Throw "Cannot find $ModuleName module at '$ModulePath'"
     }
     
-    $CMSiteProv = Get-PSDrive -PSProvider 'CMSite' -ErrorAction Ignore | Where-Object -Property Name -eq $SiteCode
+    $CMSiteProv = Get-PSDrive -PSProvider 'CMSite' -ErrorAction Ignore | Where-Object -Property Name -EQ $SiteCode
     $CMPsDrive = "$($CMSiteProv | Select-Object -First 1 -ExpandProperty Name):"
     Set-Location -Path $CMPsDrive -Verbose:$false
     
@@ -87,7 +87,7 @@ Function Get-DomainCredential {
         [String]$Domain
     )
 
-    $DomainHash = $Script:DomainTranslationTable | Where-Object -Property Domain -eq $Domain
+    $DomainHash = $Script:DomainTranslationTable | Where-Object -Property Domain -EQ $Domain
 
     $DomainCred = $DomainHash['Credential']
     If ($null -eq $DomainCred) {
@@ -167,9 +167,9 @@ Function Invoke-Multithreader {
                 $Remaining = $Remaining.Substring(0,60) + '...'
             }
             $ProgressSplat = @{
-                Activity = "Waiting for Jobs - $($MaxThreads - $($RunspacePool.GetAvailableRunspaces())) of $MaxThreads threads running"
+                Activity        = "Waiting for Jobs - $($MaxThreads - $($RunspacePool.GetAvailableRunspaces())) of $MaxThreads threads running"
                 PercentComplete = (($Jobs.count - $($($Jobs | Where-Object { $_.Handle.IsCompleted -eq $False }).count)) / $Jobs.Count * 100)
-                Status = "$(@($($Jobs | Where-Object {$_.Handle.IsCompleted -eq $False})).count) remaining - $remaining"
+                Status          = "$(@($($Jobs | Where-Object {$_.Handle.IsCompleted -eq $False})).count) remaining - $remaining"
             }
             Write-Progress @ProgressSplat
 
@@ -216,19 +216,26 @@ Function Start-ClientHealthScheduledTask {
             $Error.Clear()
             Write-Warning -Message "[$Using:ComputerName] Task '\$using:TaskName' does not exist, installing ConfigMgr Client Health Remediation Script..."
             If (! (Test-Path -Path $Using:SourcePath)) {
-                Write-Output "Failure"
+                Write-Output 'Failure'
                 Throw "Could not find Client Health source files in '$Using:SourcePath'"
             }
-            & "$using:SourcePath\Install-CMClientHealthRemediation.ps1" -Force -EA Continue
-            $ExitCode = $LASTEXITCODE
-            Switch ($LASTEXITCODE) {
-                0 {
-                    Write-Output "Installation success"
+            $CHScriptName = 'Install-CMClientHealthRemediation*.ps1'
+            [String]$CHScriptPath = Get-ChildItem -Path $using:SourcePath -Filter $CHScriptName | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
+            If ("$CHScriptPath" -ne '') {
+                & $CHScriptPath -Force -EA Continue
+                $ExitCode = $LASTEXITCODE
+                Switch ($ExitCode) {
+                    0 {
+                        Write-Output 'Installation success'
+                    }
+                    Default {
+                        Write-Output 'Installation failure'
+                        Throw "Failed to install Client Health Remediation Script (ExitCode $ExitCode)"
+                    }
                 }
-                Default {
-                    Write-Output "Installation failure"
-                    Throw "Failed to install Client Health Remediation Script (ExitCode $ExitCode)"
-                }
+            }
+            Else {
+                Throw "Could not find Client Health script in '$Using:SourcePath' using filter '$CHScriptName'"
             }
         }
         Try {
@@ -245,7 +252,7 @@ Function Start-ClientHealthScheduledTask {
                 $null = Start-Process -FilePath 'schtasks.exe' -ArgumentList $ArgumentList
                 Write-Verbose -Message "[$Using:ComputerName] Started Task '\$using:TaskName'"
             }
-            Write-Output "Task started successfully"
+            Write-Output 'Task started successfully'
         }
         Catch {
             Write-Output "Fail to start task : $($_.Exception.Message)"
@@ -255,7 +262,7 @@ Function Start-ClientHealthScheduledTask {
 
     $Splat = @{
         ComputerName = $ComputerName
-        ScriptBlock = $ScriptBlock
+        ScriptBlock  = $ScriptBlock
         #ErrorAction = 'Stop'
     }
 
@@ -271,7 +278,7 @@ Function Start-ClientHealthScheduledTask {
         Try {
             $result = $null
             $result = Invoke-Command @Splat
-            [int]$ExitCode = $result | Where-Object {$_.Gettype().Name -match 'int32'}
+            [int]$ExitCode = $result | Where-Object { $_.Gettype().Name -match 'int32' }
             if (($result -like '*success*' ) -and ($ExitCode -eq 0)) {
                 $text = '[{0}] ConfigMgr Client Health started' -f $ComputerName
                 Write-Host $text -ForegroundColor Green
@@ -298,14 +305,21 @@ Function Install-ClientHealth {
         If (! (Test-Path -Path $Using:SourcePath)) {
             Throw "Could not find Client Health source files in '$Using:SourcePath'"
         }
-        & "$using:SourcePath\Install-CMClientHealthRemediation.ps1" -Force
-       Return $LASTEXITCODE
+        $CHScriptName = 'Install-CMClientHealthRemediation*.ps1'
+        [String]$CHScriptPath = Get-ChildItem -Path $using:SourcePath -Filter $CHScriptName | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
+        If ("$CHScriptPath" -ne '') {
+            & $CHScriptPath -Force
+            Return $LASTEXITCODE
+        }
+        Else {
+            Throw "Could not find Client Health script in '$Using:SourcePath' using filter '$CHScriptName'"
+        }
     }
 
     $Splat = @{
         ComputerName = $ComputerName
-        ScriptBlock = $ScriptBlock
-        ErrorAction = 'Stop'
+        ScriptBlock  = $ScriptBlock
+        ErrorAction  = 'Stop'
     }
 
     $ComputerDomain = (($ComputerName -split '\.' | Select-Object -Skip 1) -join '.')
@@ -352,8 +366,8 @@ Function Uninstall-ClientHealth {
 
     $Splat = @{
         ComputerName = $ComputerName
-        ScriptBlock = $ScriptBlock
-        ErrorAction = 'Stop'
+        ScriptBlock  = $ScriptBlock
+        ErrorAction  = 'Stop'
     }
 
     $ComputerDomain = (($ComputerName -split '\.' | Select-Object -Skip 1) -join '.')
@@ -387,7 +401,7 @@ Function Uninstall-ClientHealth {
 
 switch ($Type) {
     'Device' {
-        $Uri = '{0}/wmi/SMS_R_System?$filter=ResourceID eq {1}&$Select=ResourceNames,Name,Domain' -f $CMAdminServiceURI, $ResourceId
+        $Uri = '{0}/wmi/SMS_R_System?$filter=ResourceID eq {1}&$Select=ResourceNames' -f $CMAdminServiceURI, $ResourceId
         [String]$ComputerName = Invoke-RestMethod -Uri $URI -UseDefaultCredentials | Select-Object -ExpandProperty value | Select-Object -ExpandProperty ResourceNames -First 1
         If ($ComputerName -eq '') {
             Write-Host "Computer with resourceId $ResourceId cannot be found" -ForegroundColor Red
@@ -395,10 +409,10 @@ switch ($Type) {
         }
         
         $Splat = @{
-            TaskName = $TaskName 
+            TaskName     = $TaskName 
             ComputerName = $ComputerName 
-            SourcePath = $SourcePath 
-            Verbose = $true
+            SourcePath   = $SourcePath 
+            Verbose      = $true
         }
 
         switch ($PSCmdlet.ParameterSetName) {
@@ -417,7 +431,7 @@ switch ($Type) {
         $URI = "{0}/wmi/SMS_FullCollectionMembership?`$filter=CollectionID eq '{1}'&`$Select=Name,Domain" -f $CMAdminServiceURI, $ResourceId
         [String[]]$ComputerList = Invoke-RestMethod -Uri $URI -UseDefaultCredentials | 
                                     Select-Object -ExpandProperty value | 
-                                    Select-Object -Property @{Label = 'Fqdn'; Expression = {"$($_.Name).$(($DomainTranslationTable | Where-Object -Property Netbios -eq $_.Domain)['Domain'])"}} |
+                                    Select-Object -Property @{Label = 'Fqdn'; Expression = { "$($_.Name).$(($DomainTranslationTable | Where-Object -Property Netbios -EQ $_.Domain)['Domain'])" } } |
                                     Select-Object -ExpandProperty Fqdn
 
         # We need to list out all collection members before we can process them. Connect to SCCM to get hostnames.
@@ -429,20 +443,20 @@ switch ($Type) {
             ObjectList = $ComputerList 
             MaxThreads = $MaxThreads 
             InputParam = 'ComputerName' 
-            AddParam = @{TaskName = $TaskName; SourcePath = $SourcePath}
+            AddParam   = @{TaskName = $TaskName; SourcePath = $SourcePath }
         }
         switch ($PSCmdlet.ParameterSetName) {
             'Start' {
-                $Command = "Start-ClientHealthScheduledTask"
+                $Command = 'Start-ClientHealthScheduledTask'
             }
             'Install' {
-                $Command = "Install-ClientHealth"
+                $Command = 'Install-ClientHealth'
             }
             'Uninstall' {
-                $Command = "Uninstall-ClientHealth"
+                $Command = 'Uninstall-ClientHealth'
             }
         }
-        Invoke-Multithreader -Command  @Splat
+        Invoke-Multithreader -Command @Splat
 
     }
 }

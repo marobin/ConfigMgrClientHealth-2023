@@ -1,6 +1,6 @@
 [CmdLetBinding()]
 Param(
-    [Parameter(Mandatory = $True, HelpMessage = 'Installation path of ConfigMgr Client Health Console Extension. Default=C:\Program Files (x86)\ConfigMgr Client Health')]
+    [Parameter(Mandatory = $True, HelpMessage = 'Installation path of ConfigMgr Client Health Console Extension.')]
     [String]$Path,
     
     [Parameter(Mandatory = $True, HelpMessage = 'Name of the scheduled task configured on the devices to start ConfigMgr Client Health')]
