@@ -62,14 +62,14 @@ param(
 
 #region INIT
 # ConfigMgr Client Health Version
-$Version = '2.0'
+$Version = '2.0.1'
 $PowerShellVersion = [int]$PSVersionTable.PSVersion.Major
 $ScriptPath = Split-Path -Parent -Path $MyInvocation.MyCommand.Definition
 . "$ScriptPath\ConfigMgrClientHealth-Functions.ps1"
 
 #$LogFolder = Get-LocalFilesPath
 
-If (! (Test-Path -Path $LogFolder)) {
+if (! (Test-Path -Path $LogFolder)) {
     $null = New-Item -Path $LogFolder -ItemType Directory -Force -Verbose
 }
 # Variable used in the Write-Log function
@@ -83,7 +83,7 @@ Write-Log -Message "Script version: $Version"
 Write-Log -Message "PowerShell version: $PowerShellVersion"
 
 #If no config file was passed in, use the default.
-If ((!$PSBoundParameters.ContainsKey('Config')) -and (!$PSBoundParameters.ContainsKey('Webservice'))) {
+if ((!$PSBoundParameters.ContainsKey('Config')) -and (!$PSBoundParameters.ContainsKey('Webservice'))) {
     $Config = Join-Path -Path ($Script:ScriptPath) -ChildPath 'Config.xml'
     Write-Log -Message "No config provided, defaulting to $Config" -Type 'WARNING'
 }
@@ -93,15 +93,15 @@ if ("$config" -ne '') {
     if (! (Test-Path -Path $Config)) {
         Write-Log -Message "Error, could not access $Config. Check file location and share/ntfs permissions. Did you misspell the name?" -Type 'ERROR'
         Write-Log -Message ('=' * 80)
-        Exit 1
+        exit 1
     }
 
     # Load XML file into variable
-    Try { $Xml = [xml]((Get-Content -Path $Config)) }
-    Catch {
+    try { $Xml = [xml]((Get-Content -Path $Config)) }
+    catch {
         Write-Log -Message "Error, could not read $Config. Check file location and share/ntfs permissions. Is XML config file damaged?" -Type 'ERROR'
         Write-Log -Message ('=' * 80)
-        Exit 1
+        exit 1
     }
 
 }
@@ -188,7 +188,6 @@ if ($Config) {
             Select-Object @{Label = 'MPList'; Expression = { $_.Matches.Groups.where({ $_.Name -eq 'MPLIST' }).Value -replace 'https*://' -split ';' } }
         ).MPList.foreach({ $_.ToLower() }) | Select-Object -Unique
 
-
     $clientCacheSize = Get-XMLConfigClientCache
     #replace to account for multiple skipreqs and escape the character
     $clientInstallProperties = $propertyString -replace '%CHInstallPath%',"$ScriptPath"
@@ -211,10 +210,10 @@ $SCCMLogJobs = New-Object System.Data.DataTable
 #region MAIN
 Write-Log -Message 'Starting precheck. Determing if script will run or not.'
 # Veriy script is running with administrative priveleges.
-If (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
     Write-Log -Message 'ERROR: Powershell not running as Administrator! Client Health aborting.' -Type 'ERROR'
     Write-Log -Message ('=' * 80)
-    Exit 1
+    exit 1
 }
 else {
     # Will exit with errorcode 2 if in task sequence
@@ -232,9 +231,9 @@ else {
 
     if ($null -ne $tsenv) {
         $TSName = $tsenv.Value('_SMSTSAdvertID')
-        Write-Log -Message "Task sequence '$TSName' is active executing on computer. ConfigMgr Client Health will not execute."
+        Write-Log -Message "Task sequence '$TSName' is currently running. ConfigMgr Client Health remediation script will not execute."
         Write-Log -Message ('=' * 80)
-        Exit 1
+        exit 1
     }
     else {
         $StartupText2 = 'ConfigMgr Client Health ' + $Version + ' starting.'
@@ -255,7 +254,7 @@ $LastRunRegistryValueName = 'LastRun'
 
 #Get the last run from the registry, defaulting to the minimum date value if the script has never ran.
 $LastRun = [datetime]::MinValue
-If (Test-Path -Path $CHRegKey) {
+if (Test-Path -Path $CHRegKey) {
     try {
         [datetime]$LastRun = Get-RegistryValue -Path $CHRegKey -Name $LastRunRegistryValueName
     }
@@ -264,18 +263,18 @@ If (Test-Path -Path $CHRegKey) {
     }
 }
 Write-Log -Message "Script last ran: $($LastRun)"
-If (($LastRun -ne [datetime]::MinValue) -and ($null -ne $WMIOperatingSystem.LastBootUpTime) -and ($LastRun -gt $WMIOperatingSystem.LastBootUpTime)) {
+if (($LastRun -ne [datetime]::MinValue) -and ($null -ne $WMIOperatingSystem.LastBootUpTime) -and ($LastRun -gt $WMIOperatingSystem.LastBootUpTime)) {
     Write-Log -Message "Computer hasn't been rebooted since the script last ran: $($LastRun) (Reboot : $($WMIOperatingSystem.LastBootUpTime))" -Type 'WARNING'
     Write-Log -Message ('=' * 80)
-    Exit 3010
+    exit 3010
 }
 
-If ($ClientDomain -notcontains $ComputerDomainFromReg) {
+if ($ClientDomain -notcontains $ComputerDomainFromReg) {
     #Remove the scheduled task
     Write-Log -Message "Computer domain '$ComputerDomainFromReg' does not match configuration ($($ClientDomain -join ', '))" -Type 'WARNING'
     Remove-ScheduledTask -TaskPath '\' -TaskName "$ClientHealthTaskName*"
     Write-Log -Message ('=' * 80)
-    Exit 1
+    exit 1
 }
 
 #Write-Log -Message "Testing if log files are bigger than max history for logfiles."
@@ -306,7 +305,7 @@ if ($WMI -like 'True') {
         Write-Log -Message 'Querying Win32_OperatingSystem and Win32_ComputerSystem again'
         $Result = Resolve-Client -Xml $xml -ClientInstallProperties $ClientInstallProperties -Uninstall $true
         Write-Log -Message "Installed CMClient ($Result)"
-        If ($Result -eq $true) { $Reinstall -eq $false }
+        if ($Result -eq $true) { $Reinstall -eq $false }
     }
 }
 
@@ -317,20 +316,20 @@ Test-ConfigMgrClient -Log $Log
 
 Write-Log -Message 'Checking if current MP list matches at least one in the configuration file.'
 [String[]]$CurrentMPList = Get-MPList
-If (($CurrentMPList.Count -gt 0)) {
+if (($CurrentMPList.Count -gt 0)) {
     $Compare = Compare-Object -ReferenceObject $CurrentMPList -DifferenceObject $ConfigMPList -IncludeEqual | Where-Object { $_.SideIndicator -eq '==' }
-    If ($null -eq $Compare) {
+    if ($null -eq $Compare) {
         Write-Log -Message ('Found {0} current MP ({1}) but none matches the configuration ({2}). Reparing the client' -f $CurrentMPList.Count, ($CurrentMPList -join ', '), ($ConfigMPList -join ', ')) -Type WARNING
         New-ClientInstalledReason -Log $Log -Message 'MPList mismatch'
         $Result = Resolve-Client -Xml $xml -ClientInstallProperties $ClientInstallProperties -Uninstall $true
         Write-Log -Message "Installed CMClient ($Result)"
-        If ($Result -eq $true) { $Reinstall -eq $false }
+        if ($Result -eq $true) { $Reinstall -eq $false }
     }
-    Else {
+    else {
         Write-Log -Message ('Found {0} current MP ({1}) and at least one matches the configuration ({2})' -f $CurrentMPList.Count, ($CurrentMPList -join ', '), ($ConfigMPList -join ', '))
     }
 }
-Else {
+else {
     Write-Log -Message 'Could not find the current MP list' -Type WARNING
 }
 
@@ -353,12 +352,12 @@ if ((Test-ClientVersion -Log $log) -eq $true) {
     }
 }
 
-    <#
+<#
 Write-Log -Message 'Validate that ConfigMgr client do not have CcmSQLCE.log and are not in debug mode'
 if (Test-CcmSQLCELog -eq $true) {
-    # This is a very bad situation. ConfigMgr agent is fubar. Local SDF files are deleted by the test itself, now reinstalling client immediatly. Waiting 10 minutes before continuing with health check.
-    Resolve-Client -Xml $xml -ClientInstallProperties $ClientInstallProperties -Uninstall $true
-    Start-Sleep -Seconds 600
+# This is a very bad situation. ConfigMgr agent is fubar. Local SDF files are deleted by the test itself, now reinstalling client immediatly. Waiting 10 minutes before continuing with health check.
+Resolve-Client -Xml $xml -ClientInstallProperties $ClientInstallProperties -Uninstall $true
+Start-Sleep -Seconds 600
 }
 #>
 
@@ -411,7 +410,7 @@ if (Get-XMLConfigBITSCheck -like 'True') {
 }
 
 Write-Log -Message 'Validating ClientSettings'
-If (Get-XMLConfigClientSettingsCheck -like 'True') {
+if (Get-XMLConfigClientSettingsCheck -like 'True') {
     Test-ClientSettingsConfiguration -Log $log
 }
 
@@ -489,20 +488,19 @@ if (Get-XMLConfigClientCacheDeleteOrphanedData -like 'true') {
 
 # Reinstall client if tagged for reinstall and configmgr client is not already installing
 $proc = Get-Process -Name 'ccmsetup' -ErrorAction Ignore
-$Error.Clear()
 
 if (($reinstall -eq $true) -and ($null -ne $proc) ) { Write-Log -Message 'ConfigMgr Client set to reinstall, but ccmsetup.exe is already running.' -Type 'WARNING' }
 elseif (($Reinstall -eq $true) -and ($null -eq $proc)) {
     # Avoid executing client installation if done already earlier in the script (See Test-ConfigMgrClient)
-    If ("$($log.ClientInstalled)" -eq '') {
+    if ("$($log.ClientInstalled)" -eq '') {
         Write-Log -Message 'Reinstalling ConfigMgr Client'
         $InstallResult = Resolve-Client -Xml $Xml -ClientInstallProperties $ClientInstallProperties -Uninstall $false
         # Add smalldate timestamp in SQL for when client was installed by Client Health.
-        If ($InstallResult -ne $false) {
+        if ($InstallResult -ne $false) {
             $log.ClientInstalled = Get-SmallDateTime
         }
     }
-    Else {
+    else {
         Write-Log -Message "Client was installed ealier, no need to run the installation again : $($log.ClientInstalled)" -Type 'WARNING'
     }
     $Log.MaxLogSize = Get-ClientMaxLogSize
@@ -561,7 +559,7 @@ if ($PSBoundParameters.ContainsKey('Webservice')) {
 }
 
 # Disable the scheduled task once the client is healthy
-If ((Test-IsClientHealthy) -and ((Get-XMLConfigDisableTaskWhenCompliant) -eq 'True')) {
+if ((Test-IsClientHealthy) -and ((Get-XMLConfigDisableTaskWhenCompliant) -eq 'True')) {
     Disable-ScheduledTask -TaskPath '\' -TaskName "$ClientHealthTaskName*"
     Write-Log -Message 'Client is healthy, disabling the scheduled task'
 }
