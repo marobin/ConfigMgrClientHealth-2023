@@ -1,5 +1,5 @@
 [CmdLetBinding()]
-Param(
+param(
     [Parameter(Mandatory = $True, HelpMessage = 'Installation path of ConfigMgr Client Health Console Extension.')]
     [String]$Path,
     
@@ -14,13 +14,17 @@ Param(
 )
 
 # Trim the '\' from $Path if present
-$Path = $Path.TrimEnd("\")
+$Path = $Path.TrimEnd('\')
 
-$ScriptRoot = $PSScriptRoot
+
+$ScriptPath = $MyInvocation.MyCommand.Source
+$ScriptParentPath = Split-Path -Path $ScriptPath -Parent
+$ScriptName = "$(Split-Path -Path $ScriptPath -Leaf)".Replace('.ps1', '')
+
 Write-Host 'Installing the Configuration Manager Console Extension'
 $ExtensionPath = "$($ENV:SMS_ADMIN_UI_PATH)\..\..\XmlStorage\Extensions"
 
-$ActionDir = "$ScriptRoot\Extensions\Actions"
+$ActionDir = "$ScriptParentPath\Extensions\Actions"
 $Extensions = Get-ChildItem -Path $ActionDir
 $ResourceAssembly = "$Path\ConfigMgr Client Health.dll"
 foreach ($extension in $Extensions) {
@@ -30,14 +34,13 @@ foreach ($extension in $Extensions) {
             $XmlFile = "$ActionDir\$extension\$File"
             [XML]$XML = Get-Content -Path $XmlFile -Raw
             $XML.ActionDescription.ImagesDescription.ResourceAssembly.Assembly = $ResourceAssembly
-
-            $ArgumentList = "-sta -executionpolicy bypass -file `"$Path\Scripts\ConfigMgrClientHealthExtension.ps1`" -ResourceId `"##SUB:ResourceID##`" -SiteCode `"##SUB:SiteCode##`""
-            Switch -Wildcard ($File) {
-                '*Device*' { $ArgumentList = "$ArgumentList -TaskName `"$ScheduledTaskName`" -Type `"Device`"" }
-                '*Collection*' { $ArgumentList = "$ArgumentList -TaskName `"$ScheduledTaskName`" -Type `"Collection`" -MaxThreads $MaxThreads" }
+            $ArgumentList = "-sta -executionpolicy bypass -Command `"&amp; {&amp; '$Path\Scripts\ConfigMgrClientHealthExtension.ps1' -ResourceId ##SUB:ResourceID##  -Name '##SUB:Name##' -Namespace '##SUB:__Namespace##'"
+            switch -Wildcard ($File) {
+                '*Device*' { $ArgumentList = "$ArgumentList -TaskName '$ScheduledTaskName' -Type 'Device'"; break }
+                '*Collection*' { $ArgumentList = "$ArgumentList -TaskName '$ScheduledTaskName' -Type 'Collection' -MaxThreads $MaxThreads"; break }
             }
             $xml.ActionDescription.ActionGroups.ActionDescription | ForEach-Object {
-                Switch -Regex ($_.DisplayName) {
+                switch -Regex ($_.DisplayName) {
                     'Start' {
                         $ActionType = 'Start'
                     }
@@ -45,7 +48,7 @@ foreach ($extension in $Extensions) {
                         $ActionType = 'Uninstall'
                     }
                 }
-                $_.Executable.Parameters = "$ArgumentList -$ActionType"
+                $_.Executable.Parameters = "$ArgumentList -$ActionType}`""
             }
             $XML.Save($XmlFile)
         }
@@ -63,9 +66,9 @@ if (! (Test-Path -Path $Path)) {
     $null = New-Item -ItemType Directory -Path "$Path\Scripts" -Force
 }
 
-Copy-Item -Path "$ScriptRoot\ConfigMgr Client Health.dll" -Destination $path -Force
+Copy-Item -Path "$ScriptParentPath\ConfigMgr Client Health.dll" -Destination $path -Force
 
-$ScriptsDir = "$ScriptRoot\Scripts"
+$ScriptsDir = "$ScriptParentPath\Scripts"
 
 Copy-Item -Path $ScriptsDir -Destination $Path -Recurse -Force
 
