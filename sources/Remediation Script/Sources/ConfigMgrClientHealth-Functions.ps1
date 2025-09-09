@@ -2628,6 +2628,121 @@ function Test-ClientSettingsConfiguration {
     }
 
 
+    function Copy-Source {
+        param (
+            [Parameter(Mandatory = $true, Position = 0)]
+            [String]$Source,
+
+            [Parameter(Mandatory = $true, Position = 1)]
+            [String]$Destination
+        )
+
+        if (! (Test-Path -Path $Source)) {
+            Write-Log -Message "[$Source] does not exist!" -Type ERROR
+            return
+        }
+
+        $BITSService = Get-Service -Name 'BITS' -EA Ignore
+        if (($BITSService.StartType -ne 'Automatic') -or ($BITSService.Status -ne 'Running')) {
+            Set-Service -Name 'BITS' -StartupType 'Automatic' -PassThru -Verbose | Start-Service -EA Continue -Verbose
+        }
+
+        try {
+            Import-Module -Name BitsTransfer -EA Stop -Verbose:$false
+        }
+        catch {
+            Write-Log -Message 'Failed to import the BitsTransfer module, defaulting to Copy-Item' -Type ERROR
+            Copy-Item -Path "$Source\*" -Destination $Destination -Recurse -Force -Verbose
+            Write-Log -Message 'Done'
+            return
+        }
+
+        $TotalSize = Get-ChildItem -Path $Source -File -Recurse | Measure-Object -Property Length -Sum | Select-Object -ExpandProperty Sum
+        $DirectoryList = Get-ChildItem -Path $Source -Directory -Recurse | Select-Object -ExpandProperty FullName
+        Write-Log -Message ('Starting BITS transfer from [{0}] to [{1}] (Total size: {2:N2} MB)' -f $Source, $Destination, ($TotalSize / 1MB))
+        if (! (Test-Path -Path $Destination)) {
+            $null = New-Item -Path $Destination -ItemType Directory -Force
+            Write-Log -Message "Created the destination [$Destination]"
+        }
+
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $JobList = $(
+            foreach ($SourceItem in ($DirectoryList + $Source)) {
+                $DestinationTree = $SourceItem.Replace("$Source",'').Trim('\')
+                $DisplayName = "Folder: $DestinationTree" -replace ': $', ': Root'
+                $FolderDestination = "$Destination\$DestinationTree".TrimEnd('\')
+                if (! (Test-Path -Path $FolderDestination)) {
+                    $null = New-Item -Path $FolderDestination -ItemType Directory -Force
+                }
+                try {
+                    Start-BitsTransfer -Source "$SourceItem\*.*" -Destination $FolderDestination -Description "[Copy-Source] $Source => $FolderDestination" -DisplayName $DisplayName -Asynchronous -EA Stop
+                    Write-Log -Message ('Started transferring files from [{0}] to [{1}]' -f $SourceItem, $FolderDestination)
+                }
+                catch {
+                    Write-Log -Message "Error while starting the transfer: $($_.Exception.Message)"
+                }
+            }
+        )
+
+        $Wait = 10
+        while ($JobList | Where-Object -Property JobState -NE 'Transferred') {
+            Start-Sleep -Seconds $Wait
+            $JobList | Where-Object -Property JobState -NotIn ('Transferred', 'Connecting', 'Transferring') |
+                ForEach-Object {
+                    Write-Log -Message "Unexpected BITS state [$($job.JobState)]: $($Job.Description)" -Type Warning
+                }
+
+        $TransferringJobList = $JobList | Where-Object -Property JobState -EQ 'Transferring'
+        if ($null -eq $TransferringJobList) { break }
+        $TransferStats = $TransferringJobList | Measure-Object -Property BytesTransferred,BytesTotal -Sum
+        $BytesTransferred = $TransferStats | Where-Object -Property Property -EQ BytesTransferred | Select-Object -ExpandProperty Sum
+        $BytesTotal = $TransferStats | Where-Object -Property Property -EQ BytesTotal | Select-Object -ExpandProperty Sum
+
+        $pctcomp = ($BytesTransferred / $BytesTotal) * 100
+        [Int64]$elapsed = $sw.elapsedmilliseconds / 1000
+
+        if ($elapsed -eq 0) {
+            $TransferRate = 0.0
+        }
+        else {
+            $TransferRate = (($BytesTransferred / $elapsed) / 1mb);
+        }
+
+        if ($pctcomp -gt 0) {
+            $secsleft = ((($elapsed / $pctcomp) * 100) - $elapsed)
+        }
+        else {
+            $secsleft = 0
+        }
+
+        # Slow down the output depending on the remaining time
+        $Wait = $(
+            switch ($secsleft) {
+                { $secsleft -gt (30 * 60) } { 120; break }
+                { $secsleft -gt (5 * 60) } { 60; break }
+                { $secsleft -gt 60 } { 30; break }
+                Default { 10 }
+            }
+        )
+        Write-Log -Message ('{0:P} done, download rate [{1:N2} MB/s] (Estimated time left: {2:hh}:{2:mm}:{2:ss})' -f ($pctcomp / 100), $TransferRate, (New-TimeSpan -Seconds $secsleft))
+    }
+
+    $DestinationSize = Get-ChildItem -Path $Destination -File -Recurse | Measure-Object -Property Length -Sum | Select-Object -ExpandProperty Sum
+    if ($DestinationSize -lt $TotalSize) {
+        Write-Log -Message "Some files are missing: $DestinationSize < $TotalSize" -Type Error
+    }
+
+    if ($null -ne $JobList) {
+        Complete-BitsTransfer -BitsJob $JobList -EA Continue
+    }
+    Write-Log -Message ('Done in {0:hh}:{0:mm}:{0:ss}' -f (New-TimeSpan -Seconds $sw.Elapsed.TotalSeconds))
+    if ($null -ne $sw) {
+        $sw.Stop()
+        $sw.Reset()
+    }
+}
+
+
 function Resolve-Client {
     param(
         [Parameter(Mandatory = $false)]$Xml,
@@ -2643,14 +2758,12 @@ function Resolve-Client {
             if (! (Test-Path -Path "$Script:ScriptPath\CMClient")) {
                 $null = New-Item -Path "$Script:ScriptPath\CMClient" -ItemType Directory -Force -Verbose
             }
-            Write-Log -Message "Copying client sources from '$ClientShare' to '$Script:ScriptPath\CMClient'"
-            Copy-Item -Path "$ClientShare\*" -Destination "$Script:ScriptPath\CMClient" -Recurse -Force -Verbose
-            Write-Log -Message 'Done'
+            Copy-Source -Source $ClientShare -Destination "$Script:ScriptPath\CMClient"
             $ClientShare = "$Script:ScriptPath\CMClient"
         }
         $SetupPath = "$ClientShare\ccmsetup.exe"
         if ($FirstInstall -eq $true) { $text = 'Installing Configuration Manager Client.' }
-        else { $text = 'Client tagged for reinstall. Reinstalling client...' }
+        else { $text = 'Client flagged for reinstall. Reinstalling client...' }
         Write-Log -Message $text
 
         Write-Log -Message 'Perform a test on a specific registry key required for ccmsetup to succeed.'
