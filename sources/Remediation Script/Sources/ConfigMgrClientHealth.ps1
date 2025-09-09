@@ -57,12 +57,14 @@ param(
     [String]$taskName = 'ConfigMgr Client Health Remediation Script',
 
     [Parameter(Mandatory = $true)]
-    [String]$LogFolder = "$Env:ProgramData\ConfigMgrClientHealth\Logs"
+    [String]$LogFolder = "$Env:ProgramData\ConfigMgrClientHealth\Logs",
+
+    [Switch]$Force
 )
 
 #region INIT
 # ConfigMgr Client Health Version
-$Version = '2.0.1'
+$Version = '2.1.0'
 $PowerShellVersion = [int]$PSVersionTable.PSVersion.Major
 $ScriptPath = Split-Path -Parent -Path $MyInvocation.MyCommand.Definition
 . "$ScriptPath\ConfigMgrClientHealth-Functions.ps1"
@@ -178,7 +180,6 @@ $Reinstall = $false
 
 # If config.xml is used
 if ($Config) {
-
     # Build the ConfigMgr Client Install Property string
     $propertyString = $Xml.Configuration.ClientInstallProperty -join ' '
     # Get the current MP list to compare against the MP list specified in the configuration file
@@ -186,7 +187,10 @@ if ($Config) {
         $Xml.Configuration.ClientInstallProperty |
             Select-String -Pattern 'SMSMP(LIST)*="*(?<MPList>[^" ]+)' |
             Select-Object @{Label = 'MPList'; Expression = { $_.Matches.Groups.where({ $_.Name -eq 'MPLIST' }).Value -replace 'https*://' -split ';' } }
-        ).MPList.foreach({ $_.ToLower() }) | Select-Object -Unique
+        ) |
+            Select-Object -ExpandProperty MPList |
+            ForEach-Object { "$_".ToLower() } |
+            Select-Object -Unique
 
     $clientCacheSize = Get-XMLConfigClientCache
     #replace to account for multiple skipreqs and escape the character
@@ -251,6 +255,7 @@ $SQLLogging = ((Get-XMLConfigSQLLoggingEnable).ToString()).ToLower()
 
 $CHRegKey = 'HKLM:\Software\ConfigMgrClientHealth'
 $LastRunRegistryValueName = 'LastRun'
+$ForceExecRegistryValueName = 'ForceExecution'
 
 #Get the last run from the registry, defaulting to the minimum date value if the script has never ran.
 $LastRun = [datetime]::MinValue
@@ -261,12 +266,52 @@ if (Test-Path -Path $CHRegKey) {
     catch {
         $Error.RemoveAt(0)
     }
+
+    try {
+        [Bool]$ForceExecution = (Get-RegistryValue -Path $CHRegKey -Name $ForceExecRegistryValueName) -eq 'True'
+    }
+    catch {
+        $Error.RemoveAt(0)
+        $ForceExecution = $false
+    }
 }
 Write-Log -Message "Script last ran: $($LastRun)"
-if (($LastRun -ne [datetime]::MinValue) -and ($null -ne $WMIOperatingSystem.LastBootUpTime) -and ($LastRun -gt $WMIOperatingSystem.LastBootUpTime)) {
-    Write-Log -Message "Computer hasn't been rebooted since the script last ran: $($LastRun) (Reboot : $($WMIOperatingSystem.LastBootUpTime))" -Type 'WARNING'
-    Write-Log -Message ('=' * 80)
-    exit 3010
+
+if (($ForceExecution -eq $false) -or ($Force.IsPresent -eq $true)) {
+    # Execute the script only if the next run schedule is set in the config and has been reached
+    $ExecutionScheduleEnabled = (Get-XMLConfigExecutionScheduleEnabled) -eq 'True'
+    $ExecutionSchedule = Get-XMLConfigExecutionSchedule
+    if (($ExecutionScheduleEnabled -eq $true) -and ($ExecutionSchedule -match '^(?<Interval>\d+)(?<IntervalType>[dwm])$')) {
+        $Interval = [uint16]$Matches['Interval']
+        switch ($Matches['IntervalType']) {
+            'd' {
+                $NextRun = $LastRun.AddDays($Interval).Date
+            }
+            'w' {
+                $NextRun = $LastRun.AddDays(($Interval * 7)).Date
+            }
+            'm' {
+                $NextRun = $LastRun.AddMonths($Interval).Date
+            }
+        }
+    }
+    else {
+        $NextRun = [datetime]::MinValue
+    }
+
+    if (($NextRun -ne [datetime]::MinValue) -and ($NextRun -gt (Get-Date).Date)) {
+        Write-Log -Message "The script last ran on $($LastRun.ToString('s').Replace('T',' ')), next run will happen after $($NextRun.ToString('yyyy-MM-dd'))" -Type 'WARNING'
+        Write-Log -Message ('=' * 80)
+        exit 3010
+    }
+    elseif (($LastRun -ne [datetime]::MinValue) -and ($null -ne $WMIOperatingSystem.LastBootUpTime) -and ($LastRun -gt $WMIOperatingSystem.LastBootUpTime)) {
+        Write-Log -Message "Computer hasn't been rebooted since the script last ran: $($LastRun.ToString('s').Replace('T',' ')) (Reboot : $($WMIOperatingSystem.LastBootUpTime.ToString('s').Replace('T',' ')))" -Type 'WARNING'
+        Write-Log -Message ('=' * 80)
+        exit 3010
+    }
+}
+else {
+    Write-Log -Message 'Force switch was used, ignoring last run checks' -Type 'WARNING'
 }
 
 if ($ClientDomain -notcontains $ComputerDomainFromReg) {
@@ -562,6 +607,11 @@ if ($PSBoundParameters.ContainsKey('Webservice')) {
 if ((Test-IsClientHealthy) -and ((Get-XMLConfigDisableTaskWhenCompliant) -eq 'True')) {
     Disable-ScheduledTask -TaskPath '\' -TaskName "$ClientHealthTaskName*"
     Write-Log -Message 'Client is healthy, disabling the scheduled task'
+}
+
+if ($ForceExecution -eq $true) {
+    $null = New-ItemProperty -Path $CHRegKey -Name $ForceExecRegistryValueName -Value 'False' -PropertyType String -Force
+    Write-Log -Message ('Reset the {0} value in {1}' -f $ForceExecRegistryValueName, $CHRegKey)
 }
 
 Write-Log -Message 'Client Health script finished'

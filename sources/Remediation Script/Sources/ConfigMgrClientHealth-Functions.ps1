@@ -4136,6 +4136,20 @@ function Get-XMLConfigDisableTaskWhenCompliant {
     }
 }
 
+function Get-XMLConfigExecutionScheduleEnabled {
+    $Xml.Configuration.Option | Where-Object { $_.Name -eq 'ExecutionSchedule' } | Select-Object -ExpandProperty 'Enable'
+}
+
+function Get-XMLConfigExecutionSchedule {
+    [String]$obj = $Xml.Configuration.Option | Where-Object { $_.Name -eq 'ExecutionSchedule' } | Select-Object -ExpandProperty 'Schedule'
+    if (($Obj.Trim() -ne '') -and ($Obj.Trim() -notmatch '^(?<Interval>\d+)(?<IntervalType>[dwm])$')) {
+        Write-Log -Message "[Get-XMLConfigExecutionSchedule] {$Obj} does not have the expected format (i[dwm])" -Type WARNING
+    }
+    else {
+        $obj.Trim()
+    }
+}
+
 function Get-XMLConfigLoggingShare {
     if ($config) {
         $obj = $Xml.Configuration.Log | Where-Object { $_.Name -like 'File' } | Select-Object -ExpandProperty 'Share'
