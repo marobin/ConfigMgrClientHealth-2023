@@ -359,6 +359,9 @@ Test-ClientAuthCert -Log $Log
 Write-Log -Message 'Testing if ConfigMgr client is installed. Installing if not.'
 Test-ConfigMgrClient -Log $Log
 
+Write-Log -Message 'Testing if the network connection is metered (could block all client communications after first install)'
+Test-NetConnectionMetered
+
 Write-Log -Message 'Checking if current MP list matches at least one in the configuration file.'
 [String[]]$CurrentMPList = Get-MPList
 if (($CurrentMPList.Count -gt 0)) {

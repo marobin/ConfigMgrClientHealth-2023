@@ -1894,6 +1894,135 @@ function Test-ClientAuthCert {
 }
 
 
+function Set-NetConnectionMeteredState {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
+        [String]$Name,
+
+        [Parameter(Mandatory = $true, Position = 1)]
+        [ValidateSet('On', 'Off')]
+        [String]$Metered
+    )
+
+    begin {
+        $InvocationName = $MyInvocation.InvocationName
+
+        #We need a Win32 class to take ownership of the Registry key
+        $definition = @'
+using System;
+using System.Runtime.InteropServices;
+namespace Win32Api
+{
+    public class NtDll
+    {
+        [DllImport("ntdll.dll", EntryPoint="RtlAdjustPrivilege")]
+        public static extern int RtlAdjustPrivilege(ulong Privilege, bool Enable, bool CurrentThread, ref bool Enabled);
+    }
+}
+'@
+        Add-Type -TypeDefinition $definition -PassThru | Out-Null
+        [Win32Api.NtDll]::RtlAdjustPrivilege(9, $true, $false, [ref]$false) | Out-Null
+        #Setting ownership to Administrators
+        $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SOFTWARE\Microsoft\Windows NT\CurrentVersion\NetworkList\DefaultMediaCost',[Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,[System.Security.AccessControl.RegistryRights]::takeownership)
+        $acl = $key.GetAccessControl()
+        $acl.SetOwner([System.Security.Principal.NTAccount]'Administrators')
+        $key.SetAccessControl($acl)
+        #Giving Administrators full control to the key
+        $rule = New-Object System.Security.AccessControl.RegistryAccessRule ([System.Security.Principal.NTAccount]'Administrators','FullControl','Allow')
+        $acl.SetAccessRule($rule)
+        $key.SetAccessControl($acl)
+        #Setting Ethernet as metered or not metered
+        $InterfaceList = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\NetworkList\DefaultMediaCost').psobject.Members |
+            Where-Object -Property MemberType -Match 'Property' |
+            Where-Object -Property Name -NotIn ('PSPath','PSParentPath','PSChildName','PSDrive','PSProvider') |
+            Select-Object -Property Name,Value
+    }
+    process {
+        $Interface = $InterfaceList | Where-Object -Property Name -EQ $Name
+        $Params = @{
+            Path         = $path
+            Name         = $name
+            PropertyType = 'DWORD'
+            Force        = $true
+        }
+        switch ($Metered) {
+            'On' {
+                $Params.Value = 2
+            }
+            'Off' {
+                $Params.Value = 1
+            }
+        }
+        if ($Interface.Value -eq $Params.Value) {
+            Write-Log -Message "[$InvocationName] [$Name] is already set to $($Params.Value)"
+        }
+        else {
+            New-ItemProperty @Params
+            Write-Log -Message "[$InvocationName] Setting [$Name] to $($Params.Value)"
+        }
+    }
+}
+
+
+function Get-NetConnectionMeteredState {
+    (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\NetworkList\DefaultMediaCost').psobject.Members |
+        Where-Object -Property MemberType -Match 'Property' |
+        Where-Object -Property Name -NotIn ('PSPath','PSParentPath','PSChildName','PSDrive','PSProvider') |
+        Select-Object -Property Name,Value
+}
+
+function Test-NetConnectionMetered {
+    $InvocationName = $MyInvocation.InvocationName
+
+    $TestEnabled = (Get-XMLConfigMeteredConnectionEnable) -eq 'True'
+
+    if ($TestEnabled -ne $true) { return }
+
+    $FixEnabled = (Get-XMLConfigMeteredConnectionFix) -eq 'True'
+
+
+    $NetworkConnection = Get-NetConnectionProfile
+
+    $DomainConnected = $false
+    $NetworkConnection | ForEach-Object {
+        Write-Log -Message "[$InvocationName] Network connection: [$($_.NetworkCategory)] $($_.Name) (Internet: $($_.IPv4Connectivity -eq 'Internet'))"
+        if ($_.NetworkCategory -eq 'DomainAuthenticated') {
+            $DomainConnected = $true
+        }
+    }
+
+    $MeteredNonCellInterfaces = Get-NetConnectionMeteredState | Where-Object -Property Name -In ('Ethernet', 'WiFi') | Where-Object -Property Value -NE 1
+    foreach ($interface in $MeteredNonCellInterfaces) {
+        Set-NetConnectionMeteredState -Name $interface.Name -Metered Off
+    }
+
+    $CCMNetworkCost = Invoke-CimMethod -Namespace 'root\ccm\ClientSDK' -ClassName 'CCM_ClientUtilities' -MethodName GetNetworkCost | Select-Object -ExpandProperty Value
+
+    [void][Windows.Networking.Connectivity.NetworkInformation, Windows, ContentType = WindowsRuntime]
+    $NetworkCostType = [Windows.Networking.Connectivity.NetworkInformation]::GetInternetConnectionProfile().GetConnectionCost().NetworkCostType
+    Write-Log -Message "[$InvocationName] CCMNetworkCost [$CCMNetworkCost], network cost type [$NetworkCostType]"
+
+    if ($FixEnabled -ne $true) { return }
+    if (($DomainConnected -eq $true) -and ($CCMNetworkCost -ne 1)) {
+        $PolicyNameSpace = 'root\ccm\Policy\Machine\ActualConfig'
+        $NwClassName = 'CCM_NetworkSettings'
+        $obj = Get-CimInstance -Namespace $PolicyNameSpace -ClassName $NwClassName
+        if ($obj.MeteredNetworkUsage -ne 1) {
+            Write-Log -Message "[$InvocationName] ConfigMgr MeteredNetworkUsage is set to $($obj.MeteredNetworkUsage), setting it to 1" -Type Warning
+            $obj | Set-CimInstance -Property @{MeteredNetworkUsage = 1 }
+            Restart-Service -Name 'ccmexec' -ErrorAction Ignore
+        }
+        else {
+            Write-Log -Message "[$InvocationName] ConfigMgr MeteredNetworkUsage is already set to 1"
+        }
+    }
+    else {
+        Write-Log -Message "[$InvocationName] No domain connection detected" -Type Warning
+    }
+}
+
+
 function Test-InTaskSequence {
     try { $tsenv = New-Object -ComObject Microsoft.SMS.TSEnvironment }
     catch {
@@ -2910,7 +3039,7 @@ function Invoke-SCCMClientAction {
             $WLParams.Message = "[$ScheduleID] Action '$ClientAction' could not be found"
             $WLParams.Type = 'WARNING'
         }
-        Else {
+        else {
             $WLParams.Message = "[$ScheduleID] Failed to trigger client action '$ClientAction': $($_.Exception.Message)"
         }
     }
@@ -4362,6 +4491,14 @@ function Get-XMLConfigRefreshComplianceStateDays {
     if ($config) {
         $Xml.Configuration.Option | Where-Object { $_.Name -like 'RefreshComplianceState' } | Select-Object -ExpandProperty 'Days'
     }
+}
+
+function Get-XMLConfigMeteredConnectionEnable {
+    $Xml.Configuration.Option | Where-Object { $_.Name -like 'MeteredConnection' } | Select-Object -ExpandProperty 'Enable'
+}
+
+function Get-XMLConfigMeteredConnectionFix {
+    $Xml.Configuration.Option | Where-Object { $_.Name -like 'MeteredConnection' } | Select-Object -ExpandProperty 'Fix'
 }
 
 function Get-XMLConfigRemediationSMSCertificate {
