@@ -1,4 +1,4 @@
-﻿
+
 #region functions
 
 #region WMI

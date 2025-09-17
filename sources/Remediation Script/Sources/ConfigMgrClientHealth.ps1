@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     ConfigMgr Client Health is a tool that validates and automatically fixes errors on Windows computers managed by Microsoft Configuration Manager.
 .EXAMPLE

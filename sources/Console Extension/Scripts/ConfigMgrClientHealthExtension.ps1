@@ -358,6 +358,15 @@ function Install-ClientHealth {
         else {
             throw "Could not find Client Health script in '$SourcePath' using filter '$CHScriptName'"
         }
+        $CHScriptName = 'Install-CMClientHealthRemediation*.ps1'
+        [String]$CHScriptPath = Get-ChildItem -Path $using:SourcePath -Filter $CHScriptName | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
+        If ("$CHScriptPath" -ne '') {
+            & $CHScriptPath -Force
+            Return $LASTEXITCODE
+        }
+        Else {
+            Throw "Could not find Client Health script in '$Using:SourcePath' using filter '$CHScriptName'"
+        }
     }
 
     $Splat = @{
