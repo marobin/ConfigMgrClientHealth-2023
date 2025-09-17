@@ -27,6 +27,10 @@
         * ConfigMgr Client Update Handler is working correctly with registry.pol
         * Windows Update Agent not working correctly, causing client not to receive patches.
         * Windows Update Agent missing patches that fixes known bugs.
+        * EntraID or Intune enrollment misconfiguration
+        * Comanagement issues
+        * Metered network connection
+
 .NOTES
     You should run this with at least local administrator rights. It is recommended to run this script under the SYSTEM context.
 
@@ -53,6 +57,9 @@ param(
     [Parameter(HelpMessage = 'URI to ConfigMgr Client Health Webservice')]
     [string]$Webservice,
 
+    [Parameter(Mandatory = $false)]
+    [String]$TaskPath = '\',
+
     [Parameter(Mandatory = $true)]
     [String]$taskName = 'ConfigMgr Client Health Remediation Script',
 
@@ -64,11 +71,12 @@ param(
 
 #region INIT
 # ConfigMgr Client Health Version
-$Version = '2.1.0'
+$Version = '2.4.0'
 $PowerShellVersion = [int]$PSVersionTable.PSVersion.Major
 $ScriptPath = Split-Path -Parent -Path $MyInvocation.MyCommand.Definition
 . "$ScriptPath\ConfigMgrClientHealth-Functions.ps1"
 
+$TaskPath = "$TaskPath\" -replace '\\+','\'
 #$LogFolder = Get-LocalFilesPath
 
 if (! (Test-Path -Path $LogFolder)) {
@@ -117,7 +125,7 @@ $SMSClientSplat = @{
     Class     = 'SMS_Client'
 }
 
-$ClientHealthTaskName = $TaskName
+$ClientHealthTaskName = $TaskName.Trim('\')
 $CMRegKey = 'HKLM:\SOFTWARE\Microsoft\CCM'
 $SCCMLoggingKey = "$CMRegKey\Logging\@GLOBAL"
 
@@ -125,7 +133,7 @@ $SCCMLoggingKey = "$CMRegKey\Logging\@GLOBAL"
 $InstallationNeeded = Test-InstallationNeeded
 If ($InstallationNeeded -eq $false) {
     #Remove the scheduled task
-    Remove-ScheduledTask -TaskPath '\' -TaskName "$ClientHealthTaskName*"
+    Remove-ScheduledTask -TaskPath $TaskPath -TaskName "$ClientHealthTaskName*"
     Write-Log -Message ('=' * 80)
     Exit 1
 }
@@ -277,13 +285,16 @@ if (Test-Path -Path $CHRegKey) {
 }
 Write-Log -Message "Script last ran: $($LastRun)"
 
-if (($ForceExecution -eq $false) -or ($Force.IsPresent -eq $true)) {
+if (($ForceExecution -eq $false) -and ($Force.IsPresent -eq $false)) {
     # Execute the script only if the next run schedule is set in the config and has been reached
     $ExecutionScheduleEnabled = (Get-XMLConfigExecutionScheduleEnabled) -eq 'True'
     $ExecutionSchedule = Get-XMLConfigExecutionSchedule
-    if (($ExecutionScheduleEnabled -eq $true) -and ($ExecutionSchedule -match '^(?<Interval>\d+)(?<IntervalType>[dwm])$')) {
+    if (($ExecutionScheduleEnabled -eq $true) -and ($ExecutionSchedule -match '^(?<Interval>\d+)(?<IntervalType>[hdwm])$')) {
         $Interval = [uint16]$Matches['Interval']
         switch ($Matches['IntervalType']) {
+            'h' {
+                $NextRun = $LastRun.AddHours($Interval)
+            }
             'd' {
                 $NextRun = $LastRun.AddDays($Interval).Date
             }
@@ -299,10 +310,10 @@ if (($ForceExecution -eq $false) -or ($Force.IsPresent -eq $true)) {
         $NextRun = [datetime]::MinValue
     }
 
-    if (($NextRun -ne [datetime]::MinValue) -and ($NextRun -gt (Get-Date).Date)) {
+    if (($NextRun -ne [datetime]::MinValue) -and ($NextRun -gt (Get-Date))) {
         Write-Log -Message "The script last ran on $($LastRun.ToString('s').Replace('T',' ')), next run will happen after $($NextRun.ToString('yyyy-MM-dd'))" -Type 'WARNING'
         Write-Log -Message ('=' * 80)
-        exit 3010
+        exit 0
     }
     elseif (($LastRun -ne [datetime]::MinValue) -and ($null -ne $WMIOperatingSystem.LastBootUpTime) -and ($LastRun -gt $WMIOperatingSystem.LastBootUpTime)) {
         Write-Log -Message "Computer hasn't been rebooted since the script last ran: $($LastRun.ToString('s').Replace('T',' ')) (Reboot : $($WMIOperatingSystem.LastBootUpTime.ToString('s').Replace('T',' ')))" -Type 'WARNING'
@@ -317,7 +328,7 @@ else {
 if ($ClientDomain -notcontains $ComputerDomainFromReg) {
     #Remove the scheduled task
     Write-Log -Message "Computer domain '$ComputerDomainFromReg' does not match configuration ($($ClientDomain -join ', '))" -Type 'WARNING'
-    Remove-ScheduledTask -TaskPath '\' -TaskName "$ClientHealthTaskName*"
+    Remove-ScheduledTask -TaskPath $TaskPath -TaskName "$ClientHealthTaskName*"
     Write-Log -Message ('=' * 80)
     exit 1
 }
@@ -358,9 +369,6 @@ Test-ClientAuthCert -Log $Log
 
 Write-Log -Message 'Testing if ConfigMgr client is installed. Installing if not.'
 Test-ConfigMgrClient -Log $Log
-
-Write-Log -Message 'Testing if the network connection is metered (could block all client communications after first install)'
-Test-NetConnectionMetered
 
 Write-Log -Message 'Checking if current MP list matches at least one in the configuration file.'
 [String[]]$CurrentMPList = Get-MPList
@@ -403,9 +411,9 @@ if ((Test-ClientVersion -Log $log) -eq $true) {
 <#
 Write-Log -Message 'Validate that ConfigMgr client do not have CcmSQLCE.log and are not in debug mode'
 if (Test-CcmSQLCELog -eq $true) {
-# This is a very bad situation. ConfigMgr agent is fubar. Local SDF files are deleted by the test itself, now reinstalling client immediatly. Waiting 10 minutes before continuing with health check.
-Resolve-Client -Xml $xml -ClientInstallProperties $ClientInstallProperties -Uninstall $true
-Start-Sleep -Seconds 600
+    # This is a very bad situation. ConfigMgr agent is fubar. Local SDF files are deleted by the test itself, now reinstalling client immediatly. Waiting 10 minutes before continuing with health check.
+    Resolve-Client -Xml $xml -ClientInstallProperties $ClientInstallProperties -Uninstall $true
+    Start-Sleep -Seconds 600
 }
 #>
 
@@ -566,6 +574,13 @@ elseif (($Reinstall -eq $true) -and ($null -eq $proc)) {
     }
 }
 
+Write-Log -Message 'Testing if the network connection is metered (could block all client communications after first install)'
+Test-NetConnectionMetered
+
+# Test and remediate the EntraID and Intune enrollments
+Test-EntraIDEnrollment
+Test-CoMgmtStatus
+
 # Get the latest client version in case it was reinstalled by the script
 $log.ClientVersion = Get-ClientVersion
 
@@ -592,8 +607,8 @@ if ($LocalLogging -like 'true') {
 }
 <#
 if (($FileLogging -like 'true') -and ($FileLogLevel -like 'full')) {
-Update-LogFile -Log $log
-Write-Log -Message 'Updating fileshare logfile with results'
+    Update-LogFile -Log $log
+    Write-Log -Message 'Updating fileshare logfile with results'
 } #>
 
 if (($SQLLogging -eq 'true') -and -not $PSBoundParameters.ContainsKey('Webservice')) {
@@ -608,7 +623,7 @@ if ($PSBoundParameters.ContainsKey('Webservice')) {
 
 # Disable the scheduled task once the client is healthy
 if ((Test-IsClientHealthy) -and ((Get-XMLConfigDisableTaskWhenCompliant) -eq 'True')) {
-    Disable-ScheduledTask -TaskPath '\' -TaskName "$ClientHealthTaskName*"
+    Disable-ScheduledTask -TaskPath $TaskPath -TaskName "$ClientHealthTaskName*"
     Write-Log -Message 'Client is healthy, disabling the scheduled task'
 }
 

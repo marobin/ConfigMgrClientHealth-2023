@@ -10,7 +10,7 @@
 
     An installation log is created either on the web service server (\\WebSvcSrv\CMClientHealth\Logs) or locally (%TEMP%)
 
-    The following variable needs to be filled out :
+    The following variable needs to be filled out:
         DomainTranslationTable: Domain translation table
             Name: Short description of the domain
             NetBIOS: Domain NetBIOS
@@ -35,6 +35,9 @@
 
     Finally, the scheduled task is registered.
 
+.PARAMETER TaskPath
+    Folder where the task will be located in the task scheduler.
+
 .PARAMETER TaskName
     Name of the scheduled task which will be used to launch the remediation script.
 
@@ -54,7 +57,7 @@
     AUTHOR: Marc-Antoine ROBIN
     VERSION: 2.0.0
     CREATION: 12/06/2023
-    MODIFICATIONS :
+    MODIFICATIONS:
         - M-A. ROBIN (26/02/2024): Added comments and reviewed the installation process
         - M-A. ROBIN (20/01/2025): Test if the correct WebServer is set in the task action argument list
 
@@ -65,6 +68,8 @@
 
 [CmdletBinding()]
 param (
+    [String]$TaskPath = '\',
+
     [String]$TaskName = 'ConfigMgr Client Health Remediation Script',
 
     [String]$Source = "$Env:ProgramData\ConfigMgrClientHealth",
@@ -113,7 +118,7 @@ Write-Verbose -Message "$(Get-Date -Format $DateTimeFormat) - START"
 
 $SourcesExist = Test-Path -Path $Sources
 $RegKeyExists = Test-Path -Path $CHRegKey
-$TaskFilePath = "$env:SystemRoot\System32\Tasks\$TaskName"
+$TaskFilePath = "$env:SystemRoot\System32\Tasks\$TaskPath\$TaskName" -replace '\\+','\'
 try {
     $TaskIsCompliant = (Test-Path -Path $TaskFilePath) -and (([xml](Get-Content -Path $TaskFilePath)).Task.Actions.Exec.Arguments -like "*-WebService '$($TargetedDomain.WebSvcSrv)*")
 }
@@ -128,7 +133,7 @@ if (($SourcesExist -eq $true) -and ($TaskIsCompliant -eq $true) -and ($RegKeyExi
 }
 $Error.Clear()
 
-If (! (Test-Path -Path $LogFolder)) {
+if (! (Test-Path -Path $LogFolder)) {
     $null = New-Item -Path $LogFolder -ItemType Directory -Force
 }
 Start-Transcript -Path "$LogFolder\ConfigMgrClientHealth-Install.log" -Force -IncludeInvocationHeader
@@ -139,7 +144,7 @@ Write-Verbose -Message "$(Get-Date -Format $DateTimeFormat) - Registry key exist
 
 #region WebService
 # Get web service server from domain
-$ComputerDomain = Get-WmiObject -Class Win32_ComputerSystem -Property Domain | Select-Object -ExpandProperty Domain
+$ComputerDomain = Get-CimInstance -Class Win32_ComputerSystem -Property Domain | Select-Object -ExpandProperty Domain
 Write-Verbose -Message "$(Get-Date -Format $DateTimeFormat) - Computer domain: $ComputerDomain"
 
 $TargetedDomain = $DomainTranslationTable.Where({ $_.Domain -eq $ComputerDomain })
@@ -161,6 +166,7 @@ if ("$WebSvcSrv" -eq '') {
 
 if (! (Test-Path -Path $Source)) {
     Write-Warning -Message "$(Get-Date -Format $DateTimeFormat) - Folder '$Source' does not exists"
+    Stop-Transcript
     exit 1
 }
 
@@ -179,8 +185,8 @@ $WebService = "https://$WebSvcSrv/ConfigMgrClientHealth"
 $Execute = "$PSHOME\powershell.exe"
 
 Write-Verbose -Message "$(Get-Date -Format $DateTimeFormat) - Script path: $ScriptPath"
-Write-Verbose -Message "$(Get-Date -Format $DateTimeFormat) - Webservice: $WebService"
 Write-Verbose -Message "$(Get-Date -Format $DateTimeFormat) - Web Service Server: $WebSvcSrv"
+Write-Verbose -Message "$(Get-Date -Format $DateTimeFormat) - Webservice: $WebService"
 Write-Verbose -Message "$(Get-Date -Format $DateTimeFormat) - Environment: $($TargetedDomain.Env)"
 
 #region Exclusion check
@@ -243,13 +249,14 @@ $ConfigFile = Get-ChildItem -Path $DestinationSources -Filter 'config-*.xml' |
         }
 if ($null -eq $ConfigFile) {
     Write-Warning -Message "$(Get-Date -Format $DateTimeFormat) (UTC$UTCDateDiff) - [$ComputerDomain|$($TargetedDomain.Env)] $env:COMPUTERNAME - Web Service Server $($WebSvcSrv): ERROR cannot find xml config file for the domain"
+    Stop-Transcript
     exit 1
 }
 Write-Verbose -Message "$(Get-Date -Format $DateTimeFormat) - Configuration file: $ConfigFile"
 
 
 # Scheduled task argument list
-$ArgumentList = "-ExecutionPolicy Bypass -NoProfile -NoLogo -Command `".\ConfigMgrClientHealth.ps1 -WebService '$WebService' -Config '.\$($ConfigFile.Name)' -TaskName '$TaskName' -LogFolder '$LogFolder' -Verbose`""
+$ArgumentList = "-ExecutionPolicy Bypass -NoProfile -NoLogo -Command `".\ConfigMgrClientHealth.ps1 -WebService '$WebService' -Config '.\$($ConfigFile.Name)' -TaskPath '$TaskPath' -TaskName '$TaskName' -LogFolder '$LogFolder' -Verbose`""
 
 
 # Modify the %CHInstallPath% in the config file using the script installation path
@@ -293,15 +300,14 @@ foreach ($folder in ($Destination, $LogFolder)) {
 # Register scheduled task
 $ProcessSplat = @{
     FilePath     = 'schtasks.exe'
-    ArgumentList = "/Create /XML `"$TaskXml`" /TN `"$TaskName`" /F"
+    ArgumentList = "/Create /XML `"$TaskXml`" /TN `"$("$TaskPath\$TaskName" -replace '\\+','\')`" /F"
     Wait         = $true
     PassThru     = $true
     WindowStyle  = 'Hidden'
 }
 $Process = Start-Process @ProcessSplat
-Write-Verbose -Message "$(Get-Date -Format $DateTimeFormat) - Imported task '$TaskName' with exit code $($Process.ExitCode)"
-
 [long]$ExitCode = $Process.ExitCode
+Write-Verbose -Message "$(Get-Date -Format $DateTimeFormat) - Imported task '$TaskName' in '$TaskPath' with exit code $ExitCode"
 
 if ($Error.Count -gt 0) {
     Write-Warning -Message "$($Error.Count) errors: `r`n$($Error.Exception.Message -join "`r`n")"
@@ -310,7 +316,7 @@ if ($Error.Count -gt 0) {
 
 Write-Output "$(Get-Date -Format $DateTimeFormat) (UTC$UTCDateDiff) - [$ComputerDomain] $env:COMPUTERNAME ($ExitCode)"
 
-Write-Verbose -Message "$(Get-Date -Format $DateTimeFormat) - END (ExitCode=$ExitCode)"
+Write-Verbose -Message "$(Get-Date -Format $DateTimeFormat) - END"
 
 Stop-Transcript
 exit $ExitCode
