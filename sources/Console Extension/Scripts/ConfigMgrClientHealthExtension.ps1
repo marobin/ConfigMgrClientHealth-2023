@@ -24,12 +24,17 @@ param(
     [Parameter(Position = 4, ParameterSetName = 'Install')]
     [Parameter(Position = 4, ParameterSetName = 'Start')]
     [Parameter(Position = 4, ParameterSetName = 'Uninstall')]
+    [String]$TaskPath,
+
+    [Parameter(Position = 5, ParameterSetName = 'Install')]
+    [Parameter(Position = 5, ParameterSetName = 'Start')]
+    [Parameter(Position = 5, ParameterSetName = 'Uninstall')]
     [Alias('ScheduledTask')]
     [String]$TaskName,
 
-    [Parameter(Mandatory = $False,Position = 5, ParameterSetName = 'Install')]
-    [Parameter(Mandatory = $False,Position = 5, ParameterSetName = 'Start')]
-    [Parameter(Mandatory = $False,Position = 5, ParameterSetName = 'Uninstall')]
+    [Parameter(Mandatory = $False,Position = 6, ParameterSetName = 'Install')]
+    [Parameter(Mandatory = $False,Position = 6, ParameterSetName = 'Start')]
+    [Parameter(Mandatory = $False,Position = 6, ParameterSetName = 'Uninstall')]
     [string]$MaxThreads = 20,
 
     [Parameter(Position = 6, ParameterSetName = 'Install')]
@@ -51,6 +56,8 @@ $RegistryKey = 'HKLM:\Software\ConfigMgrClientHealth'
 $DomainTranslationTable = @(
     @{Netbios = 'CORP'; Domain = 'corp.contoso.com'; Credential = $null }
 )
+
+$TaskPath = "$TaskPath\" -replace '\\+','\'
 #endregion variables
 
 #region CM Provider
@@ -101,7 +108,7 @@ function Get-DomainCredential {
     $DomainCred = $DomainHash['Credential']
     if ($null -eq $DomainCred) {
         $DomainNetBIOS = $DomainHash['Netbios']
-        $DomainCred = $DomainHash['Credential'] = Get-Credential -Message "Enter credentials for domain '$Domain'" -UserName "$DomainNetBIOS\..."
+        $DomainCred = $DomainHash['Credential'] = Get-Credential -Message "Enter the local administrator credentials for domain '$Domain'" -UserName "$DomainNetBIOS\"
     }
     return $DomainCred
 }
@@ -208,6 +215,7 @@ function Start-ClientHealthScheduledTask {
     [CmdLetBinding()]
     param(
         [Parameter(Mandatory = $True)][string]$ComputerName,
+        [Parameter(Mandatory = $True)][string]$TaskPath,
         [Parameter(Mandatory = $True)][string]$TaskName,
         [Parameter(Mandatory = $True)][string]$SourcePath,
         [Parameter(Mandatory = $True)][string]$RegistryKey,
@@ -215,27 +223,34 @@ function Start-ClientHealthScheduledTask {
     )
 
     $ScriptBlock = {
-        param ([bool]$Force)
+        param (
+            [string]$ComputerName,
+            [string]$TaskPath,
+            [string]$TaskName,
+            [string]$SourcePath,
+            [string]$RegistryKey,
+            [bool]$Force
+        )
 
         $Error.Clear()
         $service = New-Object -ComObject 'Schedule.service'
         $service.Connect()
         try {
-            $Folder = $service.GetFolder('\')
-            $Task = $Folder.GetTask("$using:TaskName")
+            $Folder = $service.GetFolder($TaskPath)
+            $Task = $Folder.GetTask("$TaskName")
             if ($null -eq $Task) {
                 throw
             }
         }
         catch [System.IO.FileNotFoundException] {
             $Error.Clear()
-            Write-Warning -Message "[$Using:ComputerName] Task '\$using:TaskName' does not exist, installing ConfigMgr Client Health Remediation Script..."
-            if (! (Test-Path -Path $Using:SourcePath)) {
+            Write-Warning -Message "[$ComputerName] Task '$TaskPath$($TaskName)' does not exist, installing ConfigMgr Client Health Remediation Script..."
+            if (! (Test-Path -Path $SourcePath)) {
                 Write-Output 'Failure'
-                throw "Could not find Client Health source files in '$Using:SourcePath'"
+                throw "Could not find Client Health source files in '$SourcePath'"
             }
             $CHScriptName = 'Install-CMClientHealthRemediation*.ps1'
-            [String]$CHScriptPath = Get-ChildItem -Path $using:SourcePath -Filter $CHScriptName | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
+            [String]$CHScriptPath = Get-ChildItem -Path $SourcePath -Filter $CHScriptName | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
             if ("$CHScriptPath" -ne '') {
                 & $CHScriptPath -Force -EA Continue
                 $ExitCode = $LASTEXITCODE
@@ -250,26 +265,26 @@ function Start-ClientHealthScheduledTask {
                 }
             }
             else {
-                throw "Could not find Client Health script in '$Using:SourcePath' using filter '$CHScriptName'"
+                throw "Could not find Client Health script in '$SourcePath' using filter '$CHScriptName'"
             }
         }
         try {
-            if (Test-Path -Path $Using:RegistryKey) {
+            if (Test-Path -Path $RegistryKey) {
                 # Forcing the execution of the script even if the computer was not rebooted since the last run
-                $null = New-ItemProperty -Path $Using:RegistryKey -Name 'ForceExecution' -PropertyType String -Value 'True'
+                $null = New-ItemProperty -Path $RegistryKey -Name 'ForceExecution' -PropertyType String -Value 'True' -Force
             }
             if ($null -ne $Task) {
                 if ($task.Enabled -eq $False) {
                     $task.Enabled = $true
-                    Write-Warning -Message "[$Using:ComputerName] Task '$($Task.Name)' was disabled"
+                    Write-Warning -Message "[$ComputerName] Task '$($Task.Name)' was disabled"
                 }
                 $null = $Task.Run(0)
-                Write-Verbose -Message "[$Using:ComputerName] Started Task '$($Task.Name)'"
+                Write-Verbose -Message "[$ComputerName] Started Task '$($Task.Name)'"
             }
             else {
-                $ArgumentList = "/Run /TN `"\$using:TaskName`""
+                $ArgumentList = "/Run /TN `"$TaskPath$($TaskName)`""
                 $null = Start-Process -FilePath 'schtasks.exe' -ArgumentList $ArgumentList
-                Write-Verbose -Message "[$Using:ComputerName] Started Task '\$using:TaskName'"
+                Write-Verbose -Message "[$ComputerName] Started Task '$TaskPath$($TaskName)'"
             }
             Write-Output 'Task started successfully'
         }
@@ -282,7 +297,7 @@ function Start-ClientHealthScheduledTask {
     $Splat = @{
         ComputerName = $ComputerName
         ScriptBlock  = $ScriptBlock
-        ArgumentList = @($Force.IsPresent)
+        ArgumentList = @($ComputerName,$TaskPath,$TaskName,$SourcePath,$RegistryKey,$Force.IsPresent)
         #ErrorAction = 'Stop'
     }
 
@@ -318,29 +333,37 @@ function Install-ClientHealth {
     [CmdLetBinding()]
     param(
         [Parameter(Mandatory = $True)][string]$ComputerName,
+        [Parameter(Mandatory = $True)][string]$TaskPath,
         [Parameter(Mandatory = $True)][string]$TaskName,
         [Parameter(Mandatory = $True)][string]$SourcePath,
         [Parameter(Mandatory = $True)][string]$RegistryKey
     )
 
     $ScriptBlock = {
-        if (! (Test-Path -Path $Using:SourcePath)) {
-            throw "Could not find Client Health source files in '$Using:SourcePath'"
+        param (
+            [String]$ComputerName,
+            [String]$TaskPath,
+            [String]$TaskName,
+            [String]$SourcePath
+        )
+        if (! (Test-Path -Path $SourcePath)) {
+            throw "Could not find Client Health source files in '$SourcePath'"
         }
         $CHScriptName = 'Install-CMClientHealthRemediation*.ps1'
-        [String]$CHScriptPath = Get-ChildItem -Path $using:SourcePath -Filter $CHScriptName | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
+        [String]$CHScriptPath = Get-ChildItem -Path $SourcePath -Filter $CHScriptName | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
         if ("$CHScriptPath" -ne '') {
-            & $CHScriptPath -Force
+            & $CHScriptPath -TaskPath $TaskPath -TaskName $TaskName -Destination $SourcePath -Force
             return $LASTEXITCODE
         }
         else {
-            throw "Could not find Client Health script in '$Using:SourcePath' using filter '$CHScriptName'"
+            throw "Could not find Client Health script in '$SourcePath' using filter '$CHScriptName'"
         }
     }
 
     $Splat = @{
         ComputerName = $ComputerName
         ScriptBlock  = $ScriptBlock
+        ArgumentList = @($ComputerName, $TaskPath, $TaskName, $SourcePath)
         ErrorAction  = 'Stop'
     }
 
@@ -375,22 +398,31 @@ function Uninstall-ClientHealth {
     [CmdLetBinding()]
     param(
         [Parameter(Mandatory = $True)][string]$ComputerName,
+        [Parameter(Mandatory = $True)][string]$TaskPath,
         [Parameter(Mandatory = $True)][string]$TaskName,
         [Parameter(Mandatory = $True)][string]$SourcePath,
         [Parameter(Mandatory = $True)][string]$RegistryKey
     )
 
     $ScriptBlock = {
-        if (! (Test-Path -Path $Using:SourcePath)) {
-            throw "Could not find Client Health source files in '$Using:SourcePath'"
+        param (
+            [String]$TaskPath,
+            [String]$TaskName,
+            [String]$SourcePath
+        )
+        if (! (Test-Path -Path $SourcePath)) {
+            throw "Could not find Client Health source files in '$SourcePath'"
         }
-        & "$using:SourcePath\Uninstall-CMClientHealthRemediation.ps1"
+        $CHScriptName = 'Uninstall-CMClientHealthRemediation*.ps1'
+        [String]$CHScriptPath = Get-ChildItem -Path $SourcePath -Filter $CHScriptName | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
+        & $CHScriptPath -TaskPath $TaskPath -TaskName $TaskName
         return $LASTEXITCODE
     }
 
     $Splat = @{
         ComputerName = $ComputerName
         ScriptBlock  = $ScriptBlock
+        ArgumentList = @($TaskPath, $TaskName, $SourcePath)
         ErrorAction  = 'Stop'
     }
 
@@ -429,6 +461,7 @@ switch ($Type) {
         $Result = Invoke-RestMethod -Uri $URI -UseDefaultCredentials | Select-Object -ExpandProperty value
         [String]$ComputerName = $Result | Select-Object -ExpandProperty ResourceNames -First 1
         if ($ComputerName -eq '') {
+            # If the fqdn is missing from the ResourceNames property, we'll look for it in other properties
             if ($DomainNetBios = $Result | Where-Object -Property ResourceDomainORWorkgroup -NE '' | Select-Object -ExpandProperty ResourceDomainORWorkgroup) {
                 $ComputerName = "$Name.$(($DomainTranslationTable | Where-Object -Property Netbios -EQ $DomainNetBios)['Domain'])"
             }
@@ -446,6 +479,7 @@ switch ($Type) {
                 }
             }
             else {
+                # if it still cannot be found dynamically, ask the user to provide it
                 [String]$ComputerName = Read-Host -Prompt "Enter the fully qualified domain name of $Name ($ResourceId)"
             }
         }
@@ -455,6 +489,7 @@ switch ($Type) {
         }
 
         $Splat = @{
+            TaskPath     = $TaskPath
             TaskName     = $TaskName.Trim("'")
             ComputerName = $ComputerName
             SourcePath   = $SourcePath
@@ -490,7 +525,7 @@ switch ($Type) {
             ObjectList = $ComputerList
             MaxThreads = $MaxThreads
             InputParam = 'ComputerName'
-            AddParam   = @{TaskName = $TaskName.Trim("'"); SourcePath = $SourcePath; RegistryKey = $RegistryKey }
+            AddParam   = @{TaskPath = $TaskPath; TaskName = $TaskName.Trim("'"); SourcePath = $SourcePath; RegistryKey = $RegistryKey }
         }
         switch ($PSCmdlet.ParameterSetName) {
             'Start' {
