@@ -1,88 +1,104 @@
-﻿[CmdLetBinding()]
+﻿[CmdLetBinding(DefaultParameterSetName = 'Start')]
 param(
     [Parameter(Mandatory = $True,Position = 0, ParameterSetName = 'Install')]
     [Parameter(Mandatory = $True,Position = 0, ParameterSetName = 'Start')]
     [Parameter(Mandatory = $True,Position = 0, ParameterSetName = 'Uninstall')]
-    [string]$Type,
-    
+    [string]$ResourceId,
+
     [Parameter(Mandatory = $True,Position = 1, ParameterSetName = 'Install')]
     [Parameter(Mandatory = $True,Position = 1, ParameterSetName = 'Start')]
     [Parameter(Mandatory = $True,Position = 1, ParameterSetName = 'Uninstall')]
-    [string]$ResourceId,
-    
-    [Parameter(Mandatory = $False,Position = 2, ParameterSetName = 'Install')]
-    [Parameter(Mandatory = $False,Position = 2, ParameterSetName = 'Start')]
-    [Parameter(Mandatory = $False,Position = 2, ParameterSetName = 'Uninstall')]
-    [string]$MaxThreads = 20,
-    
-    [Parameter(Position = 3, ParameterSetName = 'Install')]
-    [Parameter(Position = 3, ParameterSetName = 'Start')]
-    [Parameter(Position = 3, ParameterSetName = 'Uninstall')]
-    [String]$TaskName,
-    
+    [string]$Name,
+
+    [Parameter(Mandatory = $true, Position = 2, ParameterSetName = 'Install')]
+    [Parameter(Mandatory = $true, Position = 2, ParameterSetName = 'Start')]
+    [Parameter(Mandatory = $true, Position = 2, ParameterSetName = 'Uninstall')]
+    [ValidateScript({ $_ -match '^ROOT\\SMS\\site_\w{3}$' })]
+    [String]$Namespace,
+
+    [Parameter(Mandatory = $True,Position = 3, ParameterSetName = 'Install')]
+    [Parameter(Mandatory = $True,Position = 3, ParameterSetName = 'Start')]
+    [Parameter(Mandatory = $True,Position = 3, ParameterSetName = 'Uninstall')]
+    [string]$Type,
+
     [Parameter(Position = 4, ParameterSetName = 'Install')]
     [Parameter(Position = 4, ParameterSetName = 'Start')]
     [Parameter(Position = 4, ParameterSetName = 'Uninstall')]
-    [ValidateLength(3,3)]
-    [String]$SiteCode,
-    
-    [Parameter(ParameterSetName = 'Install')]
+    [String]$TaskPath,
+
+    [Parameter(Position = 5, ParameterSetName = 'Install')]
+    [Parameter(Position = 5, ParameterSetName = 'Start')]
+    [Parameter(Position = 5, ParameterSetName = 'Uninstall')]
+    [Alias('ScheduledTask')]
+    [String]$TaskName,
+
+    [Parameter(Mandatory = $False,Position = 6, ParameterSetName = 'Install')]
+    [Parameter(Mandatory = $False,Position = 6, ParameterSetName = 'Start')]
+    [Parameter(Mandatory = $False,Position = 6, ParameterSetName = 'Uninstall')]
+    [string]$MaxThreads = 20,
+
+    [Parameter(Position = 6, ParameterSetName = 'Install')]
     [switch]$Install,
-    
-    [Parameter(ParameterSetName = 'Start')]
+
+    [Parameter(Position = 6, ParameterSetName = 'Start')]
     [switch]$Start,
-    
-    [Parameter(ParameterSetName = 'Uninstall')]
+
+    [Parameter(Position = 6, ParameterSetName = 'Uninstall')]
     [switch]$Uninstall
 )
 
 
-
 #region variables
 $SourcePath = "$env:ALLUSERSPROFILE\ConfigMgrClientHealth"
+$RegistryKey = 'HKLM:\Software\ConfigMgrClientHealth'
 # TODO : Fill up the following table with your domains
+# The Credential attribute must be set to null and will hold the credentials for the specified domain if needed
 $DomainTranslationTable = @(
     @{Netbios = 'CORP'; Domain = 'corp.contoso.com'; Credential = $null }
 )
+
+$TaskPath = "$TaskPath\" -replace '\\+','\'
 #endregion variables
 
 #region CM Provider
-Try {
+$SiteCode = $Namespace.Substring(14)
+
+try {
     $ModuleName = 'ConfigurationManager'
     $ModulePath = "$env:SMS_ADMIN_UI_PATH\..\$ModuleName.psd1"
-    
-    If (!(Get-Module -Name $ModuleName) -and (Test-Path -Path $ModulePath)) {
+
+    if (!(Get-Module -Name $ModuleName) -and (Test-Path -Path $ModulePath)) {
         Import-Module -Name $ModulePath -Verbose:$false
     }
-    Else {
-        Throw "Cannot find $ModuleName module at '$ModulePath'"
+    else {
+        throw "Cannot find $ModuleName module at '$ModulePath'"
     }
-    
+
     $CMSiteProv = Get-PSDrive -PSProvider 'CMSite' -ErrorAction Ignore | Where-Object -Property Name -EQ $SiteCode
     $CMPsDrive = "$($CMSiteProv | Select-Object -First 1 -ExpandProperty Name):"
     Set-Location -Path $CMPsDrive -Verbose:$false
-    
+
     # Getting the SMS Provider FQDN in order to use the admin web service
     #$ServerName = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\ConfigMgr10\AdminUI\Connection' -Name 'Server').Server
     # We could also use the parameter ##SUB:__Server## in the xml but it does not contain the server FQDN
     $ServerName = (Get-CMSiteRole -RoleName 'SMS Provider' -Verbose:$false | Select-Object -ExpandProperty NetworkOSPath -First 1).Trim('\')
-    $CMAdminServiceURI = "https://$ServerName/adminService"
-    
+    $CMAdminServiceURL = "https://$ServerName/adminService/wmi"
+
     Set-Location -Path $env:SystemDrive -Verbose:$false
 }
-Catch {
+catch {
     Write-Host "Could not connect to $ModuleName provider : $($_.Exception.Message)"
     Write-Host 'Press any key to continue ...'
     $null = $host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
-    Exit 
+    exit
 }
 #endregion CM Provider
 
 
 #region Functions
-Function Get-DomainCredential {
+function Get-DomainCredential {
     [CmdletBinding()]
-    Param (
+    param (
         [Parameter(Mandatory = $true, Position = 0)]
         [String]$Domain
     )
@@ -90,18 +106,18 @@ Function Get-DomainCredential {
     $DomainHash = $Script:DomainTranslationTable | Where-Object -Property Domain -EQ $Domain
 
     $DomainCred = $DomainHash['Credential']
-    If ($null -eq $DomainCred) {
+    if ($null -eq $DomainCred) {
         $DomainNetBIOS = $DomainHash['Netbios']
-        $DomainCred = $DomainHash['Credential'] = Get-Credential -Message "Enter credentials for domain '$Domain'" -UserName "$DomainNetBIOS\"
+        $DomainCred = $DomainHash['Credential'] = Get-Credential -Message "Enter the local administrator credentials for domain '$Domain'" -UserName "$DomainNetBIOS\"
     }
-    Return $DomainCred
+    return $DomainCred
 }
 
 # Define the multhithreader function (Authored by Ryan Witschger - http://www.Get-Blog.com)
 
-Function Invoke-Multithreader {
-    Param(
-        $Command = $(Read-Host 'Enter the script file'), 
+function Invoke-Multithreader {
+    param(
+        $Command = $(Read-Host 'Enter the script file'),
         [Parameter(ValueFromPipeline = $true,ValueFromPipelineByPropertyName = $true)]$ObjectList,
         $InputParam = $Null,
         $MaxThreads = 20,
@@ -111,7 +127,7 @@ Function Invoke-Multithreader {
         [Array]$AddSwitch = @()
     )
 
-    Begin {
+    begin {
         $ISS = [system.management.automation.runspaces.initialsessionstate]::CreateDefault()
         $RunspacePool = [runspacefactory]::CreateRunspacePool(1, $MaxThreads, $ISS, $Host)
         $RunspacePool.Open()
@@ -124,158 +140,177 @@ Function Invoke-Multithreader {
             Remove-Variable OFS
         }
         #>
-        $Jobs = @()
+        $JobList = New-Object -TypeName System.Collections.ArrayList
+
     }
-    Process {
-        Write-Progress -Activity 'Preloading threads' -Status "Starting Job $($jobs.count)"
-        ForEach ($Object in $ObjectList) {
-            If ($Null -eq $Code) {
+    process {
+        Write-Progress -Activity 'Preloading threads' -Status "Starting Job $($JobList.count)"
+        foreach ($Object in $ObjectList) {
+            if ($Null -eq $Code) {
                 $PowershellThread = [powershell]::Create().AddCommand($Command)
             }
-            Else {
+            else {
                 $PowershellThread = [powershell]::Create().AddScript($Code)
             }
-            If ($Null -ne $InputParam) {
+            if ($Null -ne $InputParam) {
                 $null = $PowershellThread.AddParameter($InputParam, $Object.ToString())
             }
-            Else {
+            else {
                 $null = $PowershellThread.AddArgument($Object.ToString())
             }
-            ForEach ($Key in $AddParam.Keys) {
+            foreach ($Key in $AddParam.Keys) {
                 $null = $PowershellThread.AddParameter($Key, $AddParam.$key)
             }
-            ForEach ($Switch in $AddSwitch) {
+            foreach ($Switch in $AddSwitch) {
                 #$Switch
                 $null = $PowershellThread.AddParameter($Switch)
             }
             $PowershellThread.RunspacePool = $RunspacePool
             $Handle = $PowershellThread.BeginInvoke()
-            $Job = '' | Select-Object Handle, Thread, object
-            $Job.Handle = $Handle
-            $Job.Thread = $PowershellThread
-            $Job.Object = $Object.ToString()
-            $Jobs += $Job
+            $null = $JobList.Add(([PSCustomObject]@{
+                        Handle = $Handle
+                        Thread = $PowershellThread
+                        Object = $Object.ToString()
+                    }))
         }
-        
+
     }
-    End {
+    end {
         $ResultTimer = Get-Date
-        While (@($Jobs | Where-Object { $null -ne $_.Handle }).count -gt 0) {
-    
-            $Remaining = "$($($Jobs | Where-Object {$_.Handle.IsCompleted -eq $False}).object)"
-            If ($Remaining.Length -gt 60) {
+        while (@($JobList | Where-Object { $null -ne $_.Handle }).count -gt 0) {
+
+            $Remaining = "$($($JobList | Where-Object {$_.Handle.IsCompleted -eq $False}).object)"
+            if ($Remaining.Length -gt 60) {
                 $Remaining = $Remaining.Substring(0,60) + '...'
             }
             $ProgressSplat = @{
                 Activity        = "Waiting for Jobs - $($MaxThreads - $($RunspacePool.GetAvailableRunspaces())) of $MaxThreads threads running"
-                PercentComplete = (($Jobs.count - $($($Jobs | Where-Object { $_.Handle.IsCompleted -eq $False }).count)) / $Jobs.Count * 100)
-                Status          = "$(@($($Jobs | Where-Object {$_.Handle.IsCompleted -eq $False})).count) remaining - $remaining"
+                PercentComplete = (($JobList.count - $($($JobList | Where-Object { $_.Handle.IsCompleted -eq $False }).count)) / $JobList.Count * 100)
+                Status          = "$(@($($JobList | Where-Object {$_.Handle.IsCompleted -eq $False})).count) remaining - $remaining"
             }
             Write-Progress @ProgressSplat
 
-            ForEach ($Job in $($Jobs | Where-Object { $_.Handle.IsCompleted -eq $True })) {
+            foreach ($Job in $($JobList | Where-Object { $_.Handle.IsCompleted -eq $True })) {
                 $Job.Thread.EndInvoke($Job.Handle)
                 $Job.Thread.Dispose()
                 $Job.Thread = $Null
                 $Job.Handle = $Null
                 $ResultTimer = Get-Date
             }
-            If (($(Get-Date) - $ResultTimer).totalseconds -gt $MaxResultTime) {
+            if (($(Get-Date) - $ResultTimer).totalseconds -gt $MaxResultTime) {
                 Write-Error 'Child script appears to be frozen, try increasing MaxResultTime'
-                Exit
+                exit
             }
             Start-Sleep -Milliseconds $SleepTimer
-        
-        } 
+
+        }
         Write-Progress -Activity "Waiting for Jobs - $($MaxThreads - $($RunspacePool.GetAvailableRunspaces())) of $MaxThreads threads running" -Status 'Ready' -Completed
         $null = $RunspacePool.Close()
         $null = $RunspacePool.Dispose()
-    } 
+    }
 }
 # End Invoke-Multithreader
 
-Function Start-ClientHealthScheduledTask {
+function Start-ClientHealthScheduledTask {
     [CmdLetBinding()]
     param(
         [Parameter(Mandatory = $True)][string]$ComputerName,
+        [Parameter(Mandatory = $True)][string]$TaskPath,
         [Parameter(Mandatory = $True)][string]$TaskName,
-        [Parameter(Mandatory = $True)][string]$SourcePath
+        [Parameter(Mandatory = $True)][string]$SourcePath,
+        [Parameter(Mandatory = $True)][string]$RegistryKey,
+        [Parameter(Mandatory = $false)][switch]$Force
     )
-    $ScriptBlock = { 
+
+    $ScriptBlock = {
+        param (
+            [string]$ComputerName,
+            [string]$TaskPath,
+            [string]$TaskName,
+            [string]$SourcePath,
+            [string]$RegistryKey,
+            [bool]$Force
+        )
+
         $Error.Clear()
         $service = New-Object -ComObject 'Schedule.service'
         $service.Connect()
-        Try {
-            $Folder = $service.GetFolder('\')
-            $Task = $Folder.GetTask("$using:TaskName")
-            If ($null -eq $Task) {
-                Throw
+        try {
+            $Folder = $service.GetFolder($TaskPath)
+            $Task = $Folder.GetTask("$TaskName")
+            if ($null -eq $Task) {
+                throw
             }
         }
-        Catch [System.IO.FileNotFoundException] {
+        catch [System.IO.FileNotFoundException] {
             $Error.Clear()
-            Write-Warning -Message "[$Using:ComputerName] Task '\$using:TaskName' does not exist, installing ConfigMgr Client Health Remediation Script..."
-            If (! (Test-Path -Path $Using:SourcePath)) {
+            Write-Warning -Message "[$ComputerName] Task '$TaskPath$($TaskName)' does not exist, installing ConfigMgr Client Health Remediation Script..."
+            if (! (Test-Path -Path $SourcePath)) {
                 Write-Output 'Failure'
-                Throw "Could not find Client Health source files in '$Using:SourcePath'"
+                throw "Could not find Client Health source files in '$SourcePath'"
             }
             $CHScriptName = 'Install-CMClientHealthRemediation*.ps1'
-            [String]$CHScriptPath = Get-ChildItem -Path $using:SourcePath -Filter $CHScriptName | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
-            If ("$CHScriptPath" -ne '') {
+            [String]$CHScriptPath = Get-ChildItem -Path $SourcePath -Filter $CHScriptName | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
+            if ("$CHScriptPath" -ne '') {
                 & $CHScriptPath -Force -EA Continue
                 $ExitCode = $LASTEXITCODE
-                Switch ($ExitCode) {
+                switch ($ExitCode) {
                     0 {
                         Write-Output 'Installation success'
                     }
                     Default {
                         Write-Output 'Installation failure'
-                        Throw "Failed to install Client Health Remediation Script (ExitCode $ExitCode)"
+                        throw "Failed to install Client Health Remediation Script (ExitCode $ExitCode)"
                     }
                 }
             }
-            Else {
-                Throw "Could not find Client Health script in '$Using:SourcePath' using filter '$CHScriptName'"
+            else {
+                throw "Could not find Client Health script in '$SourcePath' using filter '$CHScriptName'"
             }
         }
-        Try {
-            If ($null -ne $Task) {
-                If ($task.Enabled -eq $False) {
+        try {
+            if (Test-Path -Path $RegistryKey) {
+                # Forcing the execution of the script even if the computer was not rebooted since the last run
+                $null = New-ItemProperty -Path $RegistryKey -Name 'ForceExecution' -PropertyType String -Value 'True' -Force
+            }
+            if ($null -ne $Task) {
+                if ($task.Enabled -eq $False) {
                     $task.Enabled = $true
-                    Write-Warning -Message "[$Using:ComputerName] Task '$($Task.Name)' was disabled"
+                    Write-Warning -Message "[$ComputerName] Task '$($Task.Name)' was disabled"
                 }
                 $null = $Task.Run(0)
-                Write-Verbose -Message "[$Using:ComputerName] Started Task '$($Task.Name)'"
+                Write-Verbose -Message "[$ComputerName] Started Task '$($Task.Name)'"
             }
-            Else {
-                $ArgumentList = "/Run /TN `"\$using:TaskName`""
+            else {
+                $ArgumentList = "/Run /TN `"$TaskPath$($TaskName)`""
                 $null = Start-Process -FilePath 'schtasks.exe' -ArgumentList $ArgumentList
-                Write-Verbose -Message "[$Using:ComputerName] Started Task '\$using:TaskName'"
+                Write-Verbose -Message "[$ComputerName] Started Task '$TaskPath$($TaskName)'"
             }
             Write-Output 'Task started successfully'
         }
-        Catch {
+        catch {
             Write-Output "Fail to start task : $($_.Exception.Message)"
         }
-        Return $Error.Count
+        return $Error.Count
     }
 
     $Splat = @{
         ComputerName = $ComputerName
         ScriptBlock  = $ScriptBlock
+        ArgumentList = @($ComputerName,$TaskPath,$TaskName,$SourcePath,$RegistryKey,$Force.IsPresent)
         #ErrorAction = 'Stop'
     }
 
     $ComputerDomain = (($ComputerName -split '\.' | Select-Object -Skip 1) -join '.')
-    If ($env:USERDNSDOMAIN -ne $ComputerDomain) {
+    if ($env:USERDNSDOMAIN -ne $ComputerDomain) {
         $Splat.Credential = Get-DomainCredential -Domain $ComputerDomain
     }
 
-    If (! (Test-Connection -ComputerName $ComputerName -Quiet -Count 1 -EA Ignore)) {
+    if (! (Test-Connection -ComputerName $ComputerName -Quiet -Count 1 -EA Ignore)) {
         Write-Host "[$ComputerName] Is offline" -ForegroundColor Red
     }
-    Else {
-        Try {
+    else {
+        try {
             $result = $null
             $result = Invoke-Command @Splat
             [int]$ExitCode = $result | Where-Object { $_.Gettype().Name -match 'int32' }
@@ -284,26 +319,44 @@ Function Start-ClientHealthScheduledTask {
                 Write-Host $text -ForegroundColor Green
             }
             else {
-                Throw $result
+                throw $result
             }
         }
-        Catch {
+        catch {
             $text = '[{0}] ConfigMgr Client Health failed to start : {1}' -f $ComputerName, $_.Exception.Message
             Write-Host $text -ForegroundColor Red
         }
     }
 }
 
-Function Install-ClientHealth {
+function Install-ClientHealth {
     [CmdLetBinding()]
     param(
         [Parameter(Mandatory = $True)][string]$ComputerName,
+        [Parameter(Mandatory = $True)][string]$TaskPath,
         [Parameter(Mandatory = $True)][string]$TaskName,
-        [Parameter(Mandatory = $True)][string]$SourcePath
+        [Parameter(Mandatory = $True)][string]$SourcePath,
+        [Parameter(Mandatory = $True)][string]$RegistryKey
     )
-    $ScriptBlock = { 
-        If (! (Test-Path -Path $Using:SourcePath)) {
-            Throw "Could not find Client Health source files in '$Using:SourcePath'"
+
+    $ScriptBlock = {
+        param (
+            [String]$ComputerName,
+            [String]$TaskPath,
+            [String]$TaskName,
+            [String]$SourcePath
+        )
+        if (! (Test-Path -Path $SourcePath)) {
+            throw "Could not find Client Health source files in '$SourcePath'"
+        }
+        $CHScriptName = 'Install-CMClientHealthRemediation*.ps1'
+        [String]$CHScriptPath = Get-ChildItem -Path $SourcePath -Filter $CHScriptName | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
+        if ("$CHScriptPath" -ne '') {
+            & $CHScriptPath -TaskPath $TaskPath -TaskName $TaskName -Destination $SourcePath -Force
+            return $LASTEXITCODE
+        }
+        else {
+            throw "Could not find Client Health script in '$SourcePath' using filter '$CHScriptName'"
         }
         $CHScriptName = 'Install-CMClientHealthRemediation*.ps1'
         [String]$CHScriptPath = Get-ChildItem -Path $using:SourcePath -Filter $CHScriptName | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
@@ -319,19 +372,20 @@ Function Install-ClientHealth {
     $Splat = @{
         ComputerName = $ComputerName
         ScriptBlock  = $ScriptBlock
+        ArgumentList = @($ComputerName, $TaskPath, $TaskName, $SourcePath)
         ErrorAction  = 'Stop'
     }
 
     $ComputerDomain = (($ComputerName -split '\.' | Select-Object -Skip 1) -join '.')
-    If ($env:USERDNSDOMAIN -ne $ComputerDomain) {
+    if ($env:USERDNSDOMAIN -ne $ComputerDomain) {
         $Splat.Credential = Get-DomainCredential -Domain $ComputerDomain
     }
 
-    If (! (Test-Connection -ComputerName $ComputerName -Quiet -Count 1 -EA Ignore)) {
+    if (! (Test-Connection -ComputerName $ComputerName -Quiet -Count 1 -EA Ignore)) {
         Write-Host "[$ComputerName] Is offline" -ForegroundColor Red
     }
-    Else {
-        Try {
+    else {
+        try {
             $result = $null
             $result = Invoke-Command @Splat
             if (($null -eq $result) -or ($result -eq 0)) {
@@ -339,47 +393,58 @@ Function Install-ClientHealth {
                 Write-Host $text -ForegroundColor Green
             }
             else {
-                Throw $result
+                throw $result
             }
         }
-        Catch {
+        catch {
             $text = '[{0}] ConfigMgr Client Health failed to install : {1}' -f $ComputerName, $_.Exception.Message
             Write-Host $text -ForegroundColor Red
         }
     }
 }
 
-Function Uninstall-ClientHealth {
+function Uninstall-ClientHealth {
     [CmdLetBinding()]
     param(
         [Parameter(Mandatory = $True)][string]$ComputerName,
+        [Parameter(Mandatory = $True)][string]$TaskPath,
         [Parameter(Mandatory = $True)][string]$TaskName,
-        [Parameter(Mandatory = $True)][string]$SourcePath
+        [Parameter(Mandatory = $True)][string]$SourcePath,
+        [Parameter(Mandatory = $True)][string]$RegistryKey
     )
-    $ScriptBlock = { 
-        If (! (Test-Path -Path $Using:SourcePath)) {
-            Throw "Could not find Client Health source files in '$Using:SourcePath'"
+
+    $ScriptBlock = {
+        param (
+            [String]$TaskPath,
+            [String]$TaskName,
+            [String]$SourcePath
+        )
+        if (! (Test-Path -Path $SourcePath)) {
+            throw "Could not find Client Health source files in '$SourcePath'"
         }
-        & "$using:SourcePath\Uninstall-CMClientHealthRemediation.ps1"
-        Return $LASTEXITCODE
+        $CHScriptName = 'Uninstall-CMClientHealthRemediation*.ps1'
+        [String]$CHScriptPath = Get-ChildItem -Path $SourcePath -Filter $CHScriptName | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
+        & $CHScriptPath -TaskPath $TaskPath -TaskName $TaskName
+        return $LASTEXITCODE
     }
 
     $Splat = @{
         ComputerName = $ComputerName
         ScriptBlock  = $ScriptBlock
+        ArgumentList = @($TaskPath, $TaskName, $SourcePath)
         ErrorAction  = 'Stop'
     }
 
     $ComputerDomain = (($ComputerName -split '\.' | Select-Object -Skip 1) -join '.')
-    If ($env:USERDNSDOMAIN -ne $ComputerDomain) {
+    if ($env:USERDNSDOMAIN -ne $ComputerDomain) {
         $Splat.Credential = Get-DomainCredential -Domain $ComputerDomain
     }
 
-    If (! (Test-Connection -ComputerName $ComputerName -Quiet -Count 1 -EA Ignore)) {
+    if (! (Test-Connection -ComputerName $ComputerName -Quiet -Count 1 -EA Ignore)) {
         Write-Host "[$ComputerName] Is offline" -ForegroundColor Red
     }
-    Else {
-        Try {
+    else {
+        try {
             $result = $null
             $result = Invoke-Command @Splat
             if (($null -eq $result) -or ($result -eq 0)) {
@@ -387,10 +452,10 @@ Function Uninstall-ClientHealth {
                 Write-Host $text -ForegroundColor Green
             }
             else {
-                Throw $result
+                throw $result
             }
         }
-        Catch {
+        catch {
             $text = '[{0}] ConfigMgr Client Health failed to uninstall : {1}' -f $ComputerName, $_.Exception.Message
             Write-Host $text -ForegroundColor Red
         }
@@ -401,23 +466,49 @@ Function Uninstall-ClientHealth {
 
 switch ($Type) {
     'Device' {
-        $Uri = '{0}/wmi/SMS_R_System?$filter=ResourceID eq {1}&$Select=ResourceNames' -f $CMAdminServiceURI, $ResourceId
-        [String]$ComputerName = Invoke-RestMethod -Uri $URI -UseDefaultCredentials | Select-Object -ExpandProperty value | Select-Object -ExpandProperty ResourceNames -First 1
-        If ($ComputerName -eq '') {
-            Write-Host "Computer with resourceId $ResourceId cannot be found" -ForegroundColor Red
+        $Uri = '{0}/SMS_R_System?$filter=ResourceID eq {1}&$Select=ResourceNames,ResourceDomainORWorkgroup,DistinguishedName,SystemOUName,Client' -f $CMAdminServiceURL, $ResourceId
+        $Result = Invoke-RestMethod -Uri $URI -UseDefaultCredentials | Select-Object -ExpandProperty value
+        [String]$ComputerName = $Result | Select-Object -ExpandProperty ResourceNames -First 1
+        if ($ComputerName -eq '') {
+            # If the fqdn is missing from the ResourceNames property, we'll look for it in other properties
+            if ($DomainNetBios = $Result | Where-Object -Property ResourceDomainORWorkgroup -NE '' | Select-Object -ExpandProperty ResourceDomainORWorkgroup) {
+                $ComputerName = "$Name.$(($DomainTranslationTable | Where-Object -Property Netbios -EQ $DomainNetBios)['Domain'])"
+            }
+            elseif ($DN = $Result | Where-Object -Property DistinguishedName -NE '' | Select-Object -ExpandProperty DistinguishedName) {
+                $Domain = $DN -replace '.*OU=[^,]+,DC=' -replace ',DC=','.'
+                $ComputerName = "$Name.$Domain"
+            }
+            elseif ($Item = $Result | Where-Object { $_.SystemOUName -match '^([^/]+)/(Computers|Ordinateurs)$' }) {
+                $Domain = $Item.SystemOUName -match '^([^/]+)/(Computers|Ordinateurs)$'
+                if ($Domain.IndexOf('.') -gt 0) {
+                    $ComputerName = "$Name.$Domain"
+                }
+                else {
+                    $ComputerName = "$Name.$(($DomainTranslationTable | Where-Object -Property Netbios -EQ $DomainNetBios)['Domain'])"
+                }
+            }
+            else {
+                # if it still cannot be found dynamically, ask the user to provide it
+                [String]$ComputerName = Read-Host -Prompt "Enter the fully qualified domain name of $Name ($ResourceId)"
+            }
+        }
+        if ($ComputerName.Trim() -eq '') {
+            Write-Host "Cannot determine the domain of computer $Name ($ResourceId)" -ForegroundColor Red
             break
         }
-        
+
         $Splat = @{
-            TaskName     = $TaskName 
-            ComputerName = $ComputerName 
-            SourcePath   = $SourcePath 
+            TaskPath     = $TaskPath
+            TaskName     = $TaskName.Trim("'")
+            ComputerName = $ComputerName
+            SourcePath   = $SourcePath
+            RegistryKey  = $RegistryKey
             Verbose      = $true
         }
 
         switch ($PSCmdlet.ParameterSetName) {
             'Start' {
-                Start-ClientHealthScheduledTask @Splat
+                Start-ClientHealthScheduledTask @Splat -Force
             }
             'Install' {
                 Install-ClientHealth @Splat
@@ -428,11 +519,11 @@ switch ($Type) {
         }
     }
     'Collection' {
-        $URI = "{0}/wmi/SMS_FullCollectionMembership?`$filter=CollectionID eq '{1}'&`$Select=Name,Domain" -f $CMAdminServiceURI, $ResourceId
-        [String[]]$ComputerList = Invoke-RestMethod -Uri $URI -UseDefaultCredentials | 
-                                    Select-Object -ExpandProperty value | 
-                                    Select-Object -Property @{Label = 'Fqdn'; Expression = { "$($_.Name).$(($DomainTranslationTable | Where-Object -Property Netbios -EQ $_.Domain)['Domain'])" } } |
-                                    Select-Object -ExpandProperty Fqdn
+        $URI = "{0}/SMS_FullCollectionMembership?`$filter=CollectionID eq '{1}'&`$Select=Name,Domain,IsClient,ResourceId" -f $CMAdminServiceURL, $ResourceId
+        [String[]]$ComputerList = Invoke-RestMethod -Uri $URI -UseDefaultCredentials |
+            Select-Object -ExpandProperty value |
+            Select-Object -Property @{Label = 'Fqdn'; Expression = { "$($_.Name).$(($DomainTranslationTable | Where-Object -Property Netbios -EQ $_.Domain)['Domain'])" } } |
+            Select-Object -ExpandProperty Fqdn
 
         # We need to list out all collection members before we can process them. Connect to SCCM to get hostnames.
         #$SiteCode = Get-WMIObject -Namespace "root\SMS" -Class "SMS_ProviderLocation" | Select-Object -ExpandProperty SiteCode
@@ -440,13 +531,14 @@ switch ($Type) {
 
         # Using the Invoke-Multithreader function to start ConfigMgr Client Health on several computers at the same time.
         $Splat = @{
-            ObjectList = $ComputerList 
-            MaxThreads = $MaxThreads 
-            InputParam = 'ComputerName' 
-            AddParam   = @{TaskName = $TaskName; SourcePath = $SourcePath }
+            ObjectList = $ComputerList
+            MaxThreads = $MaxThreads
+            InputParam = 'ComputerName'
+            AddParam   = @{TaskPath = $TaskPath; TaskName = $TaskName.Trim("'"); SourcePath = $SourcePath; RegistryKey = $RegistryKey }
         }
         switch ($PSCmdlet.ParameterSetName) {
             'Start' {
+                $Splat.AddSwitch('Force')
                 $Command = 'Start-ClientHealthScheduledTask'
             }
             'Install' {
@@ -457,7 +549,6 @@ switch ($Type) {
             }
         }
         Invoke-Multithreader -Command @Splat
-
     }
 }
 

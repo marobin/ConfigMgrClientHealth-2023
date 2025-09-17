@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Configuration>
 	<LocalFiles>C:\ProgramData\ConfigMgrClientHealth\Logs</LocalFiles> <!-- Path locally on computer for temporary files and local clienthealth.log if LocalLogFile="True" -->
-	<Client Name="Version">5.00.9096.1000</Client>
+	<Client Name="Version">5.00.9132.1023</Client>
 	<Client Name="SiteCode">SC1</Client>
 	<Client Name="Domain"></Client>
 	<Client Name="AutoUpgrade">False</Client>
-	<Client Name="Share">\\SRVFQDN\Client$</Client>
+	<Client Name="Share" Path="\\SRVFQDN\Client$" UseBITS="True" />
 	<Client Name="CacheSize" Value="10240" DeleteOrphanedData="True" Enable="False" />
 	<Client Name="Log" MaxLogSize="4096" MaxLogHistory="2" Enable="True" />
 	<ClientInstallProperty>SMSSITECODE=SC1</ClientInstallProperty>
@@ -31,7 +31,8 @@
 	<Option Name="RefreshComplianceState" Days="7" Enable="True"/>
 	<Option Name="AllowCMG" FQDN="" Enable="False"/>
 	<Option Name="ClientAuthCert" Template="" Fix="True" Enable="False"/>
-	<Option Name="DisableTaskWhenCompliant" Enable="True"/>
+	<Option Name="ExecutionSchedule" Schedule="1w" Enable="True"/>
+	<Option Name="DisableTaskWhenCompliant" Enable="False"/>
 	<Service Name="BITS" StartupType="Automatic (Delayed Start)" State="Running" Uptime=""/>
 	<Service Name="winmgmt" StartupType="Automatic" State="Running" Uptime=""/>
 	<Service Name="wuauserv" StartupType="Automatic (Delayed Start)" State="Running" Uptime=""/>
@@ -39,9 +40,12 @@
 	<Service Name="RpcSs" StartupType="Automatic" State="Running" Uptime=""/>
 	<Service Name="W32Time" StartupType="Automatic" State="Running" Uptime=""/>
 	<Service Name="ccmexec" StartupType="Automatic (Delayed Start)" State="Running" Uptime="" />
+	<Remediation Name="EntraID" Fix="False" Enable="False" TenantId="" TenantName=""/>
+	<Remediation Name="CoManagement" Fix="False" Enable="False" />
 	<Remediation Name="AdminShare" Fix="True" />
 	<Remediation Name="ClientProvisioningMode" Fix="True" />
 	<Remediation Name="ClientStateMessages" Fix="True" />
-	<Remediation Name="ClientWUAHandler" Fix="True"  Days="30"/>
+	<Remediation Name="ClientWUAHandler" Fix="True" Days="30"/>
 	<Remediation Name="SMSCertificate" Fix="True" />
+	<Remediation Name="MeteredConnection" Fix="True" Enable="True"/>
 </Configuration>
