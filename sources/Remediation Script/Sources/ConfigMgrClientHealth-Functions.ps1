@@ -163,7 +163,7 @@ function Get-Computername {
 }
 
 function Get-LastBootTime {
-    $WMIOperatingSystem.LastBootTime
+    $WMIOperatingSystem.LastBootUpTime
 }
 
 
@@ -814,7 +814,7 @@ function New-LogObject {
     $SMSCertificate = 'Unknown'
     $PendingReboot = 'Unknown'
     $RebootApp = 'Unknown'
-    $LastBootTime = Get-SmallDateTime -Date ($WMIOperatingSystem.LastBootUpTime)
+    $LastBootTime = Get-SmallDateTime -Date (Get-LastBootTime)
     $LastBootTime = $LastBootTime -replace '\.', ':'
     $OSDiskFreeSpace = Get-OSDiskSpace | Select-Object -ExpandProperty FreeSpacePct
     $AdminShare = 'Unknown'
@@ -1308,7 +1308,7 @@ function Invoke-CoMgmtBaselineEvaluation {
         [Switch]$Wait,
 
         [Parameter(ParameterSetName = 'Wait', HelpMessage = 'Timeout in seconds')]
-        [uint32]$Timeout = 600
+        [uint32]$Timeout = 60
     )
 
     begin {
@@ -1340,6 +1340,7 @@ function Invoke-CoMgmtBaselineEvaluation {
 
             # Invoke the method. Operation timeout will wait for 10 minutes. Consider the ScriptExecutionTimeout value in WMI.
             $DateTime = Get-Date
+            Start-Sleep -Seconds 2
             Write-Log -Message "Start TriggerEvaluation on: $($Arguments | ConvertTo-Json -Compress)"
             try {
                 $Result = Invoke-CimMethod @Params -MethodName 'TriggerEvaluation' -Arguments $Arguments -ErrorAction Stop -OperationTimeoutSec $Timeout
@@ -1357,7 +1358,7 @@ function Invoke-CoMgmtBaselineEvaluation {
                     Start-Sleep -Seconds 2
                     $Baseline = Get-CimInstance @Params -Filter "DisplayName='$Name'" -Property $PropertyList | Select-Object -Property $PropertyList
                 }
-                until (($Baseline.LastEvalTime -le $DateTime) -or ($Stopwatch.Elapsed.TotalSeconds -gt $Timeout))
+                until (($Baseline.LastEvalTime -lt $DateTime) -or ($Stopwatch.Elapsed.TotalSeconds -gt $Timeout))
                 Write-Log -Message "Done with code [$($Baseline.LastComplianceStatus)] on [$($Baseline.LastEvalTime)] (Timeout: $($Stopwatch.Elapsed.TotalSeconds -gt $Timeout))"
                 $Stopwatch.Stop()
                 if ($Baseline.LastComplianceStatus -eq 1) {
