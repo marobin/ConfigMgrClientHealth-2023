@@ -2001,6 +2001,21 @@ function Test-CCMCertificateError {
     }
 }
 
+
+function Get-CertificateChain {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+        [System.Security.Cryptography.X509Certificates.X509Certificate]$Certificate
+    )
+    process {
+        $chain = New-Object -TypeName System.Security.Cryptography.X509Certificates.X509Chain
+        $null = $chain.Build($Certificate)
+        $chain.ChainElements.certificate
+    }
+}
+
+
 function Get-CertificateTemplateName {
     [CmdletBinding()]
     param (

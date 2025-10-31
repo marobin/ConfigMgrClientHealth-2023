@@ -37,7 +37,7 @@ foreach ($extension in $Extensions) {
             $XmlFile = "$ActionDir\$extension\$File"
             [XML]$XML = Get-Content -Path $XmlFile -Raw
             $XML.ActionDescription.ImagesDescription.ResourceAssembly.Assembly = $ResourceAssembly
-            $ArgumentList = "-sta -executionpolicy bypass -Command `"&amp; {&amp; '$Path\Scripts\ConfigMgrClientHealthExtension.ps1' -ResourceId ##SUB:ResourceID##  -Name '##SUB:Name##' -Namespace '##SUB:__Namespace##'"
+            $ArgumentList = "-sta -executionpolicy bypass -Command `"& {& '$Path\Scripts\ConfigMgrClientHealthExtension.ps1' -ResourceId ##SUB:ResourceID##  -Name '##SUB:Name##' -Namespace '##SUB:__Namespace##'"
             switch -Wildcard ($File) {
                 '*Device*' { $ArgumentList = "$ArgumentList -TaskPath '$TaskPath' -TaskName '$TaskName' -Type 'Device'"; break }
                 '*Collection*' { $ArgumentList = "$ArgumentList -TaskPath '$TaskPath' -TaskName '$TaskName' -Type 'Collection' -MaxThreads $MaxThreads"; break }

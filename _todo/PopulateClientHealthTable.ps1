@@ -7,6 +7,9 @@ Param (
     [String[]]$DomainList = ('corp.contoso.com'),
 
     [Parameter()]
+    [String]$SiteCode = 'SC1',
+
+    [Parameter()]
     [String]$BaseName = 'Test',
 
     [Parameter()]
@@ -107,7 +110,7 @@ Function New-LogObject {
     $Manufacturer = Get-Random -InputObject ('Dell','HP', 'Lenovo')
     $Model = 'model'
     $ClientVersion = '5.00.{0}.{1}' -f (Get-Random -InputObject (9000..9098)), (Get-Random -INputObject (1000..1025))
-    $Sitecode = 'EDT'
+    $Sitecode = $Script:SiteCode
     $Domain = Get-Random -InputObject $Script:DomainList
     [int]$MaxLogSize = Get-Random -InputObject (1KB..5KB)
     $MaxLogHistory = Get-Random -InputObject (1..5)
